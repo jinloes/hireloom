@@ -64,6 +64,124 @@ export function Field({
   );
 }
 
+function MonthField({
+  label,
+  value,
+  onChange,
+  allowPresent = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  allowPresent?: boolean;
+}) {
+  const groupId = useId();
+  const presentId = useId();
+  const current = allowPresent && value === "Present";
+  const parsed = parsePickerDate(value);
+  const legacyValue =
+    value && !current && !/^\d{4}-(0[1-9]|1[0-2])$/.test(value) ? value : null;
+  const hintId = legacyValue ? `${groupId}-hint` : undefined;
+  const setYear = (year: string) =>
+    onChange(year ? `${year}-${parsed.month || "01"}` : "");
+  const setMonth = (month: string) =>
+    onChange(
+      month ? `${parsed.year || new Date().getFullYear()}-${month}` : "",
+    );
+
+  return (
+    <fieldset className="field month-field" aria-describedby={hintId}>
+      <legend>{label}</legend>
+      <div className="month-picker">
+        <select
+          aria-label={`${label} month`}
+          value={parsed.month}
+          disabled={current}
+          onChange={(event) => setMonth(event.target.value)}
+        >
+          <option value="">Month</option>
+          {monthOptions.map((month) => (
+            <option key={month.value} value={month.value}>
+              {month.label}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label={`${label} year`}
+          value={parsed.year}
+          disabled={current}
+          onChange={(event) => setYear(event.target.value)}
+        >
+          <option value="">Year</option>
+          {yearOptions.map((year) => (
+            <option key={year} value={year}>
+              {year}
+            </option>
+          ))}
+        </select>
+      </div>
+      {legacyValue && (
+        <span className="field-hint" id={hintId}>
+          Saved as “{legacyValue}”. Changing either dropdown converts it to
+          month/year format.
+        </span>
+      )}
+      {allowPresent && (
+        <label className="current-role-check" htmlFor={presentId}>
+          <input
+            id={presentId}
+            type="checkbox"
+            checked={current}
+            onChange={(event) =>
+              onChange(event.target.checked ? "Present" : "")
+            }
+          />
+          <span>Current role</span>
+        </label>
+      )}
+    </fieldset>
+  );
+}
+
+const monthOptions = [
+  ["01", "January"],
+  ["02", "February"],
+  ["03", "March"],
+  ["04", "April"],
+  ["05", "May"],
+  ["06", "June"],
+  ["07", "July"],
+  ["08", "August"],
+  ["09", "September"],
+  ["10", "October"],
+  ["11", "November"],
+  ["12", "December"],
+].map(([value, label]) => ({ value, label }));
+
+const yearOptions = Array.from(
+  { length: new Date().getFullYear() + 10 - 1900 + 1 },
+  (_, index) => String(new Date().getFullYear() + 10 - index),
+);
+
+function parsePickerDate(value: string): { year: string; month: string } {
+  const standard = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+  if (standard) return { year: standard[1], month: standard[2] };
+
+  const named = /^([A-Za-z]+)\s+(\d{4})$/.exec(value.trim());
+  if (named) {
+    const normalized = named[1].toLowerCase();
+    const month = monthOptions.find(
+      (option) =>
+        option.label.toLowerCase() === normalized ||
+        option.label.slice(0, 3).toLowerCase() === normalized,
+    );
+    if (month) return { year: named[2], month: month.value };
+  }
+
+  const year = /^(\d{4})$/.exec(value.trim());
+  return { year: year?.[1] ?? "", month: "" };
+}
+
 function EntryControls({
   label,
   index,
@@ -210,6 +328,13 @@ export function Editor({
             onChange={(value) => basics("website", value)}
             placeholder="Your website or profile URL"
           />
+          <Field
+            label="GitHub URL"
+            type="url"
+            value={resume.basics.github}
+            onChange={(value) => basics("github", value)}
+            placeholder="https://github.com/username"
+          />
         </div>
       </details>
       <details className="editor-section" open>
@@ -286,17 +411,16 @@ export function Editor({
                 placeholder="City or remote"
               />
               <div className="field-grid">
-                <Field
-                  label={`Start date ${index + 1}`}
+                <MonthField
+                  label={`Start month ${index + 1}`}
                   value={entry.startDate}
                   onChange={(startDate) => experience(entry.id, { startDate })}
-                  placeholder="Jan 2023"
                 />
-                <Field
-                  label={`End date ${index + 1}`}
+                <MonthField
+                  label={`End month ${index + 1}`}
                   value={entry.endDate}
                   onChange={(endDate) => experience(entry.id, { endDate })}
-                  placeholder="Present"
+                  allowPresent
                 />
               </div>
               {entry.bullets.map((text, bulletIndex) => (

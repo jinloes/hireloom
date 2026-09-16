@@ -7,7 +7,7 @@ import {
   View,
   pdf,
 } from "@react-pdf/renderer";
-import { accents, type Resume } from "./model";
+import { accents, formatYearMonth, type Resume } from "./model";
 import sansRegular from "./assets/fonts/NotoSans-Regular.ttf";
 import sansBold from "./assets/fonts/NotoSans-Bold.ttf";
 import serifRegular from "./assets/fonts/NotoSerif-Regular.ttf";
@@ -31,44 +31,42 @@ Font.registerHyphenationCallback((word) => [word]);
 
 const styles = StyleSheet.create({
   page: {
-    padding: 46,
-    paddingBottom: 50,
+    padding: 40,
+    paddingBottom: 44,
     fontFamily: "Noto Sans",
-    fontSize: 9.5,
-    lineHeight: 1.55,
+    fontSize: 8.5,
+    lineHeight: 1.42,
     color: "#303c39",
   },
-  header: { borderBottomWidth: 1.4, paddingBottom: 16, marginBottom: 4 },
-  name: { fontSize: 27, fontWeight: 700, lineHeight: 1.25 },
-  headline: { marginTop: 5, fontSize: 12 },
-  contact: { marginTop: 8, fontSize: 8, color: "#57605e" },
+  header: { borderBottomWidth: 1.2, paddingBottom: 10, marginBottom: 2 },
+  name: { fontSize: 22, fontWeight: 700, lineHeight: 1.2 },
+  headline: { marginTop: 3, fontSize: 10.5 },
+  contact: { marginTop: 5, fontSize: 7.5, color: "#57605e" },
   sectionTitle: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: 700,
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-    marginTop: 19,
-    marginBottom: 8,
+    marginTop: 13,
+    marginBottom: 5,
   },
-  entry: { marginBottom: 10 },
+  entry: { marginBottom: 6 },
   entryHeading: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 14,
+    gap: 10,
     alignItems: "baseline",
   },
   role: { fontWeight: 700, flexShrink: 1 },
-  dates: { fontSize: 8, color: "#57605e", maxWidth: "40%" },
-  company: { color: "#57605e", marginBottom: 4 },
-  bullet: { flexDirection: "row", marginBottom: 3 },
-  bulletMark: { width: 12 },
+  dates: { fontSize: 7.5, color: "#57605e", maxWidth: "40%" },
+  company: { color: "#57605e", marginBottom: 2 },
+  bullet: { flexDirection: "row", marginBottom: 1 },
+  bulletMark: { width: 9 },
   bulletText: { flex: 1 },
   pageNumber: {
     position: "absolute",
-    bottom: 23,
-    right: 46,
+    bottom: 20,
+    right: 40,
     color: "#87918e",
-    fontSize: 8,
+    fontSize: 7,
   },
 });
 
@@ -98,6 +96,7 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
               resume.basics.phone,
               resume.basics.location,
               resume.basics.website,
+              resume.basics.github,
             ]
               .filter(Boolean)
               .join("  ·  ")}
@@ -131,6 +130,7 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
                   <Text style={styles.dates}>
                     {[entry.startDate, entry.endDate]
                       .filter(Boolean)
+                      .map(formatYearMonth)
                       .join(" – ")}
                   </Text>
                 </View>

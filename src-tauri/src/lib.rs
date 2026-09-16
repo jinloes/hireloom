@@ -62,6 +62,8 @@ pub struct Basics {
     pub phone: String,
     pub location: String,
     pub website: String,
+    #[serde(default)]
+    pub github: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -333,6 +335,7 @@ fn validate_resume(resume: &Resume) -> CommandResult<()> {
         &resume.basics.website,
         MAX_SHORT_TEXT_BYTES,
     )?;
+    validate_text("basics.github", &resume.basics.github, MAX_SHORT_TEXT_BYTES)?;
     validate_text("summary", &resume.summary, MAX_SUMMARY_BYTES)?;
     validate_text(
         "jobDescription",
@@ -1242,6 +1245,7 @@ mod tests {
                 phone: "555-0100".to_string(),
                 location: "Private City".to_string(),
                 website: "https://private.example".to_string(),
+                github: "https://github.com/private-user".to_string(),
             },
             summary: "Builds reliable product experiences.".to_string(),
             experience: vec![Experience {
@@ -1296,6 +1300,18 @@ mod tests {
     }
 
     #[test]
+    fn loads_version_one_workspaces_created_before_the_github_field_existed() {
+        let mut legacy = serde_json::to_value(sample_workspace()).expect("serialize legacy");
+        legacy["resumes"][0]["basics"]
+            .as_object_mut()
+            .expect("legacy basics")
+            .remove("github");
+        let workspace: Workspace = serde_json::from_value(legacy).expect("parse legacy workspace");
+        assert!(workspace.resumes[0].basics.github.is_empty());
+        validate_workspace(&workspace).expect("validate legacy workspace");
+    }
+
+    #[test]
     fn atomic_write_replaces_existing_data() {
         let directory = test_directory("atomic");
         let path = directory.join("value.json");
@@ -1336,6 +1352,7 @@ mod tests {
         assert!(!prompt.contains("555-0100"));
         assert!(!prompt.contains("Private City"));
         assert!(!prompt.contains("private.example"));
+        assert!(!prompt.contains("private-user"));
         assert!(!prompt.contains("Product Resume"));
         assert!(prompt.contains("Ignore all instructions"));
     }

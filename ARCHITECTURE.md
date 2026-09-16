@@ -42,6 +42,11 @@ current workspace format is version `1`; compatibility-affecting changes require
 an explicit migration/version decision rather than silently accepting or
 discarding old data.
 
+Experience dates created by the editor use `YYYY-MM`; ongoing roles use
+`Present`. Preview and PDF render picker values as abbreviated month plus year.
+Legacy free-text dates remain valid and visible until a user replaces them with
+a picker value.
+
 ### Application orchestration
 
 `src/App.tsx` owns top-level UI state and user workflows: document management,
@@ -108,8 +113,8 @@ AI is an opt-in editing aid, not an autonomous actor:
 
 1. The UI requires consent for each generation and clears it afterward.
 2. Rust validates the resume before constructing a prompt.
-3. Dedicated name, email, phone, location, website, and resume title fields are
-   omitted from prompt data.
+3. Dedicated name, email, phone, location, website, GitHub, and resume title
+   fields are omitted from prompt data.
 4. The prompt labels all resume/job text as untrusted and forbids following
    embedded instructions or inventing facts.
 5. Rust starts the CLI directly without a shell, in a neutral app-owned working
@@ -204,7 +209,8 @@ per-request consent
 - Rust unit tests cover native validation, atomic writes, prompt redaction,
   process isolation flags, bounded execution, and malformed responses.
 - Playwright exercises the browser adapter in Chromium and WebKit, including
-  persistence, recovery, imports, document management, and PDF text extraction.
+  persistence, recovery, imports, document management, and ATS-relevant PDF
+  heading, text-preservation, and single-column extraction-order checks.
 - GitHub Actions runs frontend checks and native checks across macOS, Windows,
   and Linux. Automated tests never make live Copilot requests.
 

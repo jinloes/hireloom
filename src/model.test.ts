@@ -4,18 +4,29 @@ import {
   createResume,
   documentFilename,
   exampleResume,
+  formatYearMonth,
   initialWorkspace,
   jobKeywords,
   MAX_WORKSPACE_BYTES,
   parseWorkspace,
   resumeReadiness,
   validateProposal,
+  type Resume,
 } from "./model";
 
 describe("workspace validation", () => {
   it("round trips a workspace and keeps empty resumes valid", () => {
     const workspace = initialWorkspace();
     expect(parseWorkspace(JSON.stringify(workspace))).toEqual(workspace);
+  });
+
+  it("loads version-1 workspaces created before the GitHub field existed", () => {
+    const workspace = initialWorkspace();
+    const legacy = structuredClone(workspace);
+    delete (legacy.resumes[0].basics as Partial<Resume["basics"]>).github;
+    expect(
+      parseWorkspace(JSON.stringify(legacy)).resumes[0].basics.github,
+    ).toBe("");
   });
 
   it("rejects corrupt data, future versions, missing selections, and duplicate IDs", () => {
@@ -121,6 +132,13 @@ describe("AI proposals", () => {
 });
 
 describe("local feedback", () => {
+  it("formats picker dates and preserves legacy date text", () => {
+    expect(formatYearMonth("2026-09")).toBe("Sep 2026");
+    expect(formatYearMonth("Present")).toBe("Present");
+    expect(formatYearMonth("Spring 2024")).toBe("Spring 2024");
+    expect(formatYearMonth("")).toBe("");
+  });
+
   it("does not match partial technical terms or the job description against itself", () => {
     const resume = createResume();
     resume.jobDescription =

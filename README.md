@@ -25,7 +25,9 @@ connect to Copilot. It does not read your desktop workspace.
 ## What's included
 
 - Multiple resume documents with rename, duplicate, and confirmed deletion.
-- Personal details, summary, reorderable experience and education, and skills.
+- Personal details including portfolio, LinkedIn, and GitHub URLs; summary;
+  reorderable experience with month/year dates and current-role support;
+  education; and skills.
 - A live preview, Editorial and Modern layouts, and three accent colors.
 - Local autosaving with visible failures, retries, and recovery backup export.
 - A4, selectable-text PDFs with embedded fonts and automatic page overflow.
@@ -80,8 +82,9 @@ malformed output, and the three-minute timeout leave your resume unchanged.
   browser data deletes that browser's workspace; export a backup first.
 - AI sends the summary, work history, education, skills, professional headline,
   and job description to GitHub Copilot. Dedicated name, email, phone, personal
-  location, and website fields are excluded. **Anything you type into free text
-  can still contain identifying information**; review and redact it yourself.
+  location, website, and GitHub fields are excluded. **Anything you type into
+  free text can still contain identifying information**; review and redact it
+  yourself.
 - Copilot authentication and session state use the app's `copilot` directory.
   The CLI may retain prompts and responses there, and GitHub processes the
   request according to your account's policies. Local-first does not mean
@@ -104,20 +107,33 @@ Repository guides:
 - [`CODE_MAP.md`](CODE_MAP.md) maps files and common changes to their owning
   modules.
 
+Shared IntelliJ IDEA/RustRover run configurations are committed under `.run/`.
+Use **Browser Preview** for the isolated browser build, **Desktop App** for
+`tauri dev`, and the frontend, E2E, Rust test, build, and **Native Clippy**
+configurations for the matching checks below. The IDE must have Node.js support
+and Rust installed.
+
 ```sh
 npm test
 npm run build
 npx playwright install chromium webkit
 npm run test:e2e
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+npm run test:rust
+npm run clippy:rust
 npm run format:check
 ```
 
+Set `PLAYWRIGHT_PORT` to run browser tests on another port when `1420` is
+already in use, for example `PLAYWRIGHT_PORT=1422 npm run test:e2e`.
+
 The browser suite covers real editing, persistence, corrupt storage, imports,
-document management, and exported PDF text in Chromium and WebKit. Frontend unit tests cover schemas,
-keyword boundaries, save failures, and AI consent/review/undo. Native tests use
-fake CLI processes; tests never authenticate or spend Copilot usage.
+document management, and exported PDF text in Chromium and WebKit. It also
+checks ATS-relevant PDF compatibility: standard section headings, complete
+selectable text, and single-column extraction order. These checks do not claim
+compatibility with every ATS or provide a hiring score. Frontend unit tests
+cover schemas, keyword boundaries, save failures, and AI consent/review/undo.
+Native tests use fake CLI processes; tests never authenticate or spend Copilot
+usage.
 
 ```sh
 npm run tauri build

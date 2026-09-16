@@ -67,28 +67,29 @@ Related native configuration:
 
 ## Tests
 
-| Location                              | Coverage                                                                                                                             |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/model.test.ts`                   | Workspace validation, proposal invariants, readiness, keywords, and filenames                                                        |
-| `src/App.test.tsx`                    | Load/save failures, serialized saves, consent, proposal review, stale detection, undo, and AI errors                                 |
-| `src/test/setup.ts`                   | Vitest DOM setup and cleanup                                                                                                         |
-| `src-tauri/src/lib.rs` `tests` module | Native validation, atomic writes, isolated Copilot config, prompt redaction, proposal parsing, subprocess flags, timeout, and errors |
-| `e2e/studio.spec.ts`                  | Browser editing, persistence, import/export, PDF text, document management, corrupt data, and pagination                             |
+| Location                              | Coverage                                                                                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/model.test.ts`                   | Workspace validation, proposal invariants, readiness, keywords, and filenames                                                                |
+| `src/App.test.tsx`                    | Load/save failures, serialized saves, consent, proposal review, stale detection, undo, and AI errors                                         |
+| `src/test/setup.ts`                   | Vitest DOM setup and cleanup                                                                                                                 |
+| `src-tauri/src/lib.rs` `tests` module | Native validation, atomic writes, isolated Copilot config, prompt redaction, proposal parsing, subprocess flags, timeout, and errors         |
+| `e2e/studio.spec.ts`                  | Browser editing, persistence, import/export, ATS-relevant PDF headings/read order/content, document management, corrupt data, and pagination |
 
 ## Tooling and automation
 
-| Location                               | Responsibility                                            |
-| -------------------------------------- | --------------------------------------------------------- |
-| `package.json` / `package-lock.json`   | JavaScript dependencies and development commands          |
-| `vite.config.ts`                       | React/Vite build and fixed Tauri development server       |
-| `vitest.config.ts`                     | Frontend unit/component test configuration                |
-| `playwright.config.ts`                 | Chromium/WebKit browser tests and local Vite server       |
-| `tsconfig.json` / `tsconfig.node.json` | Strict application and tooling TypeScript configuration   |
-| `.github/workflows/checks.yml`         | Frontend and cross-platform native CI                     |
-| `.github/copilot-instructions.md`      | Concise repository constraints supplied to GitHub Copilot |
-| `.prettierignore`                      | Formatter exclusions                                      |
-| `.gitignore` / `src-tauri/.gitignore`  | Generated and private-data exclusions                     |
-| `.vscode/extensions.json`              | Recommended editor extensions                             |
+| Location                               | Responsibility                                                      |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| `package.json` / `package-lock.json`   | JavaScript dependencies and development commands                    |
+| `vite.config.ts`                       | React/Vite build and fixed Tauri development server                 |
+| `vitest.config.ts`                     | Frontend unit/component test configuration                          |
+| `playwright.config.ts`                 | Chromium/WebKit browser tests and local Vite server                 |
+| `tsconfig.json` / `tsconfig.node.json` | Strict application and tooling TypeScript configuration             |
+| `.github/workflows/checks.yml`         | Frontend and cross-platform native CI                               |
+| `.github/copilot-instructions.md`      | Concise repository constraints supplied to GitHub Copilot           |
+| `.run/*.run.xml`                       | Shared IntelliJ IDEA/RustRover development and check configurations |
+| `.prettierignore`                      | Formatter exclusions                                                |
+| `.gitignore` / `src-tauri/.gitignore`  | Generated and private-data exclusions                               |
+| `.vscode/extensions.json`              | Recommended editor extensions                                       |
 
 ## Common change paths
 

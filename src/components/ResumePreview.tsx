@@ -1,4 +1,4 @@
-import { accents, type Resume } from "../model";
+import { accents, formatYearMonth, type Resume } from "../model";
 
 export function ResumePreview({ resume }: { resume: Resume }) {
   const contact = [
@@ -6,6 +6,7 @@ export function ResumePreview({ resume }: { resume: Resume }) {
     resume.basics.phone,
     resume.basics.location,
     resume.basics.website,
+    resume.basics.github,
   ].filter(Boolean);
   return (
     <article
@@ -43,7 +44,10 @@ export function ResumePreview({ resume }: { resume: Resume }) {
               <div className="resume-entry-heading">
                 <h3>{entry.role || "Role"}</h3>
                 <span>
-                  {[entry.startDate, entry.endDate].filter(Boolean).join(" – ")}
+                  {[entry.startDate, entry.endDate]
+                    .filter(Boolean)
+                    .map(formatYearMonth)
+                    .join(" – ")}
                 </span>
               </div>
               <p className="resume-company">

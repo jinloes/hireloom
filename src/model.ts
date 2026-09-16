@@ -26,6 +26,7 @@ export const resumeSchema = z
       phone: shortText,
       location: shortText,
       website: shortText,
+      github: shortText.default(""),
     }),
     summary: z.string().max(10_000),
     experience: z.array(experienceSchema).max(30),
@@ -110,6 +111,26 @@ export const accents = {
   charcoal: "#343b43",
 };
 
+const months = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+export function formatYearMonth(value: string): string {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+  return match ? `${months[Number(match[2]) - 1]} ${match[1]}` : value;
+}
+
 export function createResume(): Resume {
   return {
     id: crypto.randomUUID(),
@@ -122,6 +143,7 @@ export function createResume(): Resume {
       phone: "",
       location: "",
       website: "",
+      github: "",
     },
     summary: "",
     experience: [],
@@ -149,6 +171,7 @@ export function exampleResume(): Resume {
       phone: "",
       location: "Portland, OR",
       website: "portfolio.example.com",
+      github: "github.com/alexmorgan",
     },
     summary:
       "Product designer who makes complex tools feel simple. Experienced in turning research into thoughtful, accessible digital experiences, working closely with engineering teams from the first sketch to the final detail.",
@@ -158,7 +181,7 @@ export function exampleResume(): Resume {
         role: "Senior Product Designer",
         company: "Morrow Studio",
         location: "Remote",
-        startDate: "2022",
+        startDate: "2022-01",
         endDate: "Present",
         bullets: [
           "Led the end-to-end redesign of a customer onboarding experience, combining user research, prototyping, and usability testing.",
@@ -171,8 +194,8 @@ export function exampleResume(): Resume {
         role: "Product Designer",
         company: "Forma",
         location: "Portland, OR",
-        startDate: "2019",
-        endDate: "2022",
+        startDate: "2019-06",
+        endDate: "2022-01",
         bullets: [
           "Designed responsive web experiences from early wireframes through high-fidelity prototypes.",
           "Conducted customer interviews and usability studies to guide iterative product improvements.",

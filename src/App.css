@@ -86,7 +86,8 @@ summary:focus-visible {
   outline-offset: 3px;
 }
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: none;
   border-color: #739888;
   box-shadow: 0 0 0 3px #174c4310;
@@ -718,6 +719,57 @@ button {
   color: #939c8c;
   line-height: 1.7;
 }
+.month-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.month-field legend {
+  margin-bottom: 7px;
+  padding: 0;
+  color: #738169;
+  font-size: 10px;
+}
+.month-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 7px;
+}
+.month-picker select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #e0e6da;
+  border-radius: 5px;
+  background: #fff;
+  padding: 10px 8px;
+  color: #45513f;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.month-picker select:disabled {
+  cursor: not-allowed;
+  color: #939c8c;
+  background: #f4f6f1;
+}
+.current-role-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  cursor: pointer;
+}
+.field .current-role-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+  accent-color: var(--green);
+}
+.current-role-check span {
+  color: #627158;
+  font-size: 10px;
+}
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -869,27 +921,27 @@ button {
     0 4px 16px #213d2310,
     0 1px 3px #32452405;
   border: 1px solid #e3e7dc;
-  padding: 38px 39px;
+  padding: 34px 36px;
   width: 100%;
   min-height: 650px;
   max-width: 690px;
   margin: 0 auto;
   color: #3e4943;
-  line-height: 1.7;
-  font-size: 10px;
+  line-height: 1.45;
+  font-size: 9px;
   overflow-wrap: anywhere;
 }
 .resume-heading {
-  border-bottom: 1.5px solid var(--resume-accent);
-  padding-bottom: 16px;
+  border-bottom: 1.25px solid var(--resume-accent);
+  padding-bottom: 11px;
 }
 .resume-heading h1 {
   color: var(--resume-accent);
   font-family: var(--serif);
-  font-size: clamp(20px, 2vw, 30px);
-  margin: 0 0 5px;
+  font-size: clamp(19px, 1.8vw, 27px);
+  margin: 0 0 3px;
   letter-spacing: -0.7px;
-  line-height: 1.4;
+  line-height: 1.25;
   font-weight: 700;
 }
 .template-modern .resume-heading h1 {
@@ -897,32 +949,32 @@ button {
   letter-spacing: -1px;
 }
 .resume-headline {
-  font-size: 12px;
+  font-size: 10.5px;
   color: #4f6356;
 }
 .resume-contact {
-  font-size: 8px;
-  margin-top: 10px;
+  font-size: 7.5px;
+  margin-top: 6px;
   color: #7d867d;
-  line-height: 1.8;
+  line-height: 1.5;
   white-space: pre-wrap;
 }
 .resume-section {
-  margin-top: 20px;
+  margin-top: 14px;
 }
 .resume-section h2 {
-  font-size: 8px;
+  font-size: 7.5px;
   color: var(--resume-accent);
   font-weight: 700;
   letter-spacing: 1.6px;
   text-transform: uppercase;
-  margin: 0 0 9px;
+  margin: 0 0 6px;
 }
 .resume-section p {
   white-space: pre-wrap;
 }
 .resume-entry {
-  margin-top: 13px;
+  margin-top: 9px;
 }
 .resume-entry:first-of-type {
   margin-top: 0;
@@ -930,37 +982,37 @@ button {
 .resume-entry-heading {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 9px;
   align-items: baseline;
 }
 .resume-entry-heading h3 {
   margin: 0;
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: 9px;
+  line-height: 1.35;
   font-weight: 600;
 }
 .resume-entry-heading > span {
-  font-size: 8px;
+  font-size: 7.5px;
   color: #818a7c;
   max-width: 40%;
   flex-shrink: 0;
 }
 .resume-company {
-  font-size: 9px;
+  font-size: 8px;
   color: #7b8679;
   margin-top: 2px;
 }
 .resume-entry ul {
-  padding-left: 14px;
-  margin: 7px 0 0;
+  padding-left: 12px;
+  margin: 4px 0 0;
 }
 .resume-entry li {
-  margin-bottom: 5px;
+  margin-bottom: 2px;
   white-space: pre-wrap;
 }
 .resume-entry li::marker {
   color: #7c8d72;
-  font-size: 9px;
+  font-size: 8px;
 }
 .resume-paper .placeholder {
   color: #abb6a3;
@@ -1717,18 +1769,18 @@ button {
     padding-right: 50px;
   }
   .resume-paper {
-    padding: 45px 48px;
-    font-size: 11px;
+    padding: 38px 42px;
+    font-size: 10px;
     min-height: 850px;
   }
   .resume-heading h1 {
-    font-size: 32px;
+    font-size: 28px;
   }
   .resume-entry-heading h3 {
-    font-size: 11px;
+    font-size: 10px;
   }
   .resume-section h2 {
-    font-size: 9px;
+    font-size: 8px;
   }
 }
 @media (max-width: 1200px) {
