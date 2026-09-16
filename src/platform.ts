@@ -1,6 +1,8 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   type AprAnalysis,
+  type AprQuestionAnswer,
+  type AprRefinement,
   type AprTarget,
   type AiProposal,
   type Resume,
@@ -8,6 +10,8 @@ import {
   MAX_WORKSPACE_BYTES,
   parseWorkspace,
   validateAprAnalysis,
+  validateAprQuestionAnswers,
+  validateAprRefinement,
   validateAprTarget,
   validateProposal,
   workspaceSchema,
@@ -114,5 +118,28 @@ export async function analyzeAccomplishment(
       consent,
     }),
     validTarget,
+  );
+}
+
+export async function refineAccomplishment(
+  target: AprTarget,
+  questions: string[],
+  answers: AprQuestionAnswer[],
+  consent: boolean,
+): Promise<AprRefinement> {
+  if (!desktop) throw new Error("APR refinement requires the desktop app.");
+  if (!consent)
+    throw new Error("Confirm that you want to send these answers to Copilot.");
+  const validTarget = validateAprTarget(target);
+  const validAnswers = validateAprQuestionAnswers(questions, answers);
+  return validateAprRefinement(
+    await invoke<unknown>("refine_accomplishment", {
+      target: validTarget,
+      questions,
+      answers: validAnswers,
+      consent,
+    }),
+    validTarget,
+    validAnswers,
   );
 }

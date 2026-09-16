@@ -9,10 +9,13 @@ import {
   initialWorkspace,
   jobKeywords,
   MAX_WORKSPACE_BYTES,
+  normalizeAprAnswers,
   parseWorkspace,
   resumeReadiness,
   validateProposal,
   validateAprAnalysis,
+  validateAprQuestionAnswers,
+  validateAprRefinement,
   validateAprTarget,
   type Resume,
 } from "./model";
@@ -162,6 +165,12 @@ describe("AI proposals", () => {
         ),
       ).toThrow();
       expect(() =>
+        validateAprAnalysis(
+          { ...analysis, questions: ["Duplicate?", "Duplicate?"] },
+          target,
+        ),
+      ).toThrow("unique");
+      expect(() =>
         validateAprTarget({ ...target, bullet: "x".repeat(2_001) }, resume),
       ).toThrow();
       expect(() => applyAprRewrite(resume, target, target.bullet)).toThrow(
@@ -170,6 +179,118 @@ describe("AI proposals", () => {
       expect(() =>
         validateAprTarget({ ...target, role: "Changed role" }, resume),
       ).toThrow("no longer matches");
+    });
+
+    it("normalizes ordered nonblank APR answers and validates refinement echoes", () => {
+      const resume = exampleResume();
+      const target = {
+        resumeId: resume.id,
+        experienceId: resume.experience[0].id,
+        bulletIndex: 0,
+        role: resume.experience[0].role,
+        bullet: resume.experience[0].bullets[0],
+      };
+      const questions = ["What changed?", "Who benefited?", "How was it done?"];
+      const answers = normalizeAprAnswers(questions, [
+        "  Faster onboarding.  ",
+        "",
+        " With usability tests. ",
+      ]);
+      expect(answers).toEqual([
+        { question: questions[0], answer: "Faster onboarding." },
+        { question: questions[2], answer: "With usability tests." },
+      ]);
+      expect(validateAprQuestionAnswers(questions, answers)).toEqual(answers);
+      const refinement = {
+        target,
+        answers,
+        rewrite:
+          "Led an onboarding redesign validated through usability testing.",
+      };
+      expect(validateAprRefinement(refinement, target, answers)).toEqual(
+        refinement,
+      );
+    });
+
+    it("rejects invalid APR answer binding, limits, and refinement data", () => {
+      const resume = exampleResume();
+      const target = {
+        resumeId: resume.id,
+        experienceId: resume.experience[0].id,
+        bulletIndex: 0,
+        role: resume.experience[0].role,
+        bullet: resume.experience[0].bullets[0],
+      };
+      const questions = ["First?", "Second?"];
+      expect(() => normalizeAprAnswers(questions, [""])).toThrow("match");
+      expect(() =>
+        normalizeAprAnswers(["Duplicate?", "Duplicate?"], ["a", "b"]),
+      ).toThrow("unique");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "Second?", answer: "two" },
+          { question: "First?", answer: "one" },
+        ]),
+      ).toThrow("display order");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "First?", answer: "one" },
+          { question: "First?", answer: "again" },
+        ]),
+      ).toThrow("duplicated");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "Unknown?", answer: "one" },
+        ]),
+      ).toThrow("unknown");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "First?", answer: " untrimmed " },
+        ]),
+      ).toThrow("trimmed");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "First?", answer: "x".repeat(2_001) },
+        ]),
+      ).toThrow();
+      expect(() => validateAprQuestionAnswers(questions, [])).toThrow();
+      const answers = [{ question: "First?", answer: "one" }];
+      expect(() =>
+        validateAprRefinement(
+          { target, answers, rewrite: target.bullet },
+          target,
+          answers,
+        ),
+      ).toThrow("changed");
+      expect(() =>
+        validateAprRefinement(
+          {
+            target: { ...target, bulletIndex: 1 },
+            answers,
+            rewrite: "Changed.",
+          },
+          target,
+          answers,
+        ),
+      ).toThrow("different accomplishment");
+      expect(() =>
+        validateAprRefinement(
+          {
+            target,
+            answers: [{ question: "First?", answer: "other" }],
+            rewrite: "Changed.",
+          },
+          target,
+          answers,
+        ),
+      ).toThrow("different answers");
+      expect(() =>
+        validateAprRefinement(
+          { target, answers, rewrite: "Changed.", extra: true },
+          target,
+          answers,
+        ),
+      ).toThrow();
     });
   });
 

@@ -114,13 +114,34 @@ export const aprDimensionSchema = z.strictObject({
   feedback: nonemptyBullet,
 });
 
-export const aprAnalysisSchema = z.strictObject({
+export const aprAnalysisSchema = z
+  .strictObject({
+    target: aprTargetSchema,
+    action: aprDimensionSchema,
+    project: aprDimensionSchema,
+    result: aprDimensionSchema,
+    rewrite: z.string().max(2_000).optional(),
+    questions: z.array(nonemptyBullet).max(5),
+  })
+  .superRefine((analysis, ctx) => {
+    if (new Set(analysis.questions).size !== analysis.questions.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: "APR questions must be unique.",
+        path: ["questions"],
+      });
+    }
+  });
+
+export const aprQuestionAnswerSchema = z.strictObject({
+  question: nonemptyBullet,
+  answer: nonemptyBullet,
+});
+
+export const aprRefinementSchema = z.strictObject({
   target: aprTargetSchema,
-  action: aprDimensionSchema,
-  project: aprDimensionSchema,
-  result: aprDimensionSchema,
-  rewrite: z.string().max(2_000).optional(),
-  questions: z.array(nonemptyBullet).max(5),
+  answers: z.array(aprQuestionAnswerSchema).min(1).max(5),
+  rewrite: nonemptyBullet,
 });
 
 export type Resume = z.infer<typeof resumeSchema>;
@@ -131,6 +152,8 @@ export type AiProposal = z.infer<typeof proposalSchema>;
 export type AprTarget = z.infer<typeof aprTargetSchema>;
 export type AprDimension = z.infer<typeof aprDimensionSchema>;
 export type AprAnalysis = z.infer<typeof aprAnalysisSchema>;
+export type AprQuestionAnswer = z.infer<typeof aprQuestionAnswerSchema>;
+export type AprRefinement = z.infer<typeof aprRefinementSchema>;
 
 export const MAX_WORKSPACE_BYTES = 2 * 1024 * 1024;
 export const accents = {
@@ -330,6 +353,81 @@ export function validateAprAnalysis(
     );
   }
   return analysis;
+}
+
+export function normalizeAprAnswers(
+  questions: string[],
+  answers: string[],
+): AprQuestionAnswer[] {
+  const validQuestions = z.array(nonemptyBullet).max(5).parse(questions);
+  if (new Set(validQuestions).size !== validQuestions.length) {
+    throw new Error("APR questions must be unique.");
+  }
+  if (answers.length !== validQuestions.length) {
+    throw new Error("APR answers must match the current question list.");
+  }
+  return validQuestions.flatMap((question, index) => {
+    const answer = bullet.parse(answers[index]).trim();
+    return answer ? [{ question, answer }] : [];
+  });
+}
+
+export function validateAprQuestionAnswers(
+  questions: string[],
+  value: unknown,
+): AprQuestionAnswer[] {
+  const validQuestions = z.array(nonemptyBullet).max(5).parse(questions);
+  if (new Set(validQuestions).size !== validQuestions.length) {
+    throw new Error("APR questions must be unique.");
+  }
+  const answers = z.array(aprQuestionAnswerSchema).min(1).max(5).parse(value);
+  const seen = new Set<string>();
+  let previousIndex = -1;
+  for (const pair of answers) {
+    if (pair.answer !== pair.answer.trim()) {
+      throw new Error("APR answers must be trimmed.");
+    }
+    const index = validQuestions.indexOf(pair.question);
+    if (index < 0) throw new Error("APR answer contains an unknown question.");
+    if (seen.has(pair.question)) {
+      throw new Error("APR answer questions must not be duplicated.");
+    }
+    if (index <= previousIndex) {
+      throw new Error("APR answers must follow question display order.");
+    }
+    seen.add(pair.question);
+    previousIndex = index;
+  }
+  return answers;
+}
+
+export function validateAprRefinement(
+  value: unknown,
+  expectedTarget: AprTarget,
+  expectedAnswers: AprQuestionAnswer[],
+): AprRefinement {
+  const refinement = aprRefinementSchema.parse(value);
+  validateAprTarget(refinement.target);
+  if (
+    refinement.target.resumeId !== expectedTarget.resumeId ||
+    refinement.target.experienceId !== expectedTarget.experienceId ||
+    refinement.target.bulletIndex !== expectedTarget.bulletIndex ||
+    refinement.target.role !== expectedTarget.role ||
+    refinement.target.bullet !== expectedTarget.bullet
+  ) {
+    throw new Error(
+      "Copilot returned a refinement for a different accomplishment. Nothing has been changed.",
+    );
+  }
+  if (JSON.stringify(refinement.answers) !== JSON.stringify(expectedAnswers)) {
+    throw new Error(
+      "Copilot returned a refinement for different answers. Nothing has been changed.",
+    );
+  }
+  if (refinement.rewrite === expectedTarget.bullet) {
+    throw new Error("Copilot did not provide a changed, nonempty rewrite.");
+  }
+  return refinement;
 }
 
 export function applyAprRewrite(

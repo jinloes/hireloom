@@ -31,9 +31,12 @@ import {
   errorMessage,
   exampleResume,
   MAX_WORKSPACE_BYTES,
+  normalizeAprAnswers,
   parseWorkspace,
   resumeReadiness,
   type AprAnalysis,
+  type AprQuestionAnswer,
+  type AprRefinement,
   type AprTarget,
   type AiProposal,
   type Resume,
@@ -45,6 +48,7 @@ import {
   exportDocument,
   generateResume,
   loginToCopilot,
+  refineAccomplishment,
   type CopilotStatus,
 } from "./platform";
 import { useWorkspace } from "./useWorkspace";
@@ -59,6 +63,11 @@ type Tab = "content" | "copilot" | "style";
 type Notice = { kind: "success" | "error"; text: string };
 type Suggestion = { value: AiProposal; source: string };
 type AprSuggestion = { value: AprAnalysis; source: AprTarget };
+type AprRefinementSuggestion = {
+  value: AprRefinement;
+  source: AprTarget;
+  answers: AprQuestionAnswer[];
+};
 
 function App() {
   const {
@@ -77,7 +86,7 @@ function App() {
   const [exporting, setExporting] = useState(false);
   const [copilot, setCopilot] = useState<CopilotStatus | null>(null);
   const [busy, setBusy] = useState<
-    "status" | "login" | "generate" | "analyze" | null
+    "status" | "login" | "generate" | "analyze" | "refine" | null
   >(null);
   const [consent, setConsent] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
@@ -86,6 +95,10 @@ function App() {
   const [aprSuggestion, setAprSuggestion] = useState<AprSuggestion | null>(
     null,
   );
+  const [aprAnswers, setAprAnswers] = useState<string[]>([]);
+  const [aprRefinementConsent, setAprRefinementConsent] = useState(false);
+  const [aprRefinement, setAprRefinement] =
+    useState<AprRefinementSuggestion | null>(null);
   const [undo, setUndo] = useState<Resume | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showTools, setShowTools] = useState(false);
@@ -94,12 +107,19 @@ function App() {
   const resume = workspace?.resumes.find(
     (item) => item.id === workspace.activeResumeId,
   );
-  const blocked = busy === "generate" || busy === "analyze" || busy === "login";
+  const blocked =
+    busy === "generate" ||
+    busy === "analyze" ||
+    busy === "refine" ||
+    busy === "login";
 
   function resetApr() {
     setAprTarget(null);
     setAprConsent(false);
     setAprSuggestion(null);
+    setAprAnswers([]);
+    setAprRefinementConsent(false);
+    setAprRefinement(null);
   }
 
   const report = (error: unknown) =>
@@ -139,6 +159,7 @@ function App() {
     setConsent(false);
     setAprTarget(null);
     setAprConsent(false);
+    setAprRefinementConsent(false);
     setUndo(null);
   }
 
@@ -327,6 +348,9 @@ function App() {
     setAprTarget(target);
     setAprConsent(false);
     setAprSuggestion(null);
+    setAprAnswers([]);
+    setAprRefinementConsent(false);
+    setAprRefinement(null);
   }
 
   async function analyzeApr() {
@@ -345,6 +369,9 @@ function App() {
     try {
       const value = await analyzeAccomplishment(aprTarget, aprConsent);
       setAprSuggestion({ value, source: aprTarget });
+      setAprAnswers(value.questions.map(() => ""));
+      setAprRefinementConsent(false);
+      setAprRefinement(null);
       setNotice({
         kind: "success",
         text: "Your APR analysis is ready to review. Your resume has not been changed.",
@@ -369,6 +396,71 @@ function App() {
     );
   }
 
+  function currentAprAnswers(): AprQuestionAnswer[] {
+    if (!aprSuggestion) return [];
+    return normalizeAprAnswers(aprSuggestion.value.questions, aprAnswers);
+  }
+
+  function changeAprAnswer(index: number, value: string) {
+    setAprAnswers((current) =>
+      current.map((answer, answerIndex) =>
+        answerIndex === index ? value : answer,
+      ),
+    );
+    setAprRefinementConsent(false);
+  }
+
+  function aprRefinementIsCurrent(
+    refinement: AprRefinementSuggestion,
+  ): boolean {
+    return (
+      aprSourceIsCurrent(refinement.source) &&
+      JSON.stringify(currentAprAnswers()) === JSON.stringify(refinement.answers)
+    );
+  }
+
+  async function refineApr() {
+    if (!aprSuggestion) return;
+    if (!aprSourceIsCurrent(aprSuggestion.source)) {
+      setAprRefinementConsent(false);
+      report(
+        new Error(
+          "This accomplishment changed. Analyze it again before refining.",
+        ),
+      );
+      return;
+    }
+    const answers = currentAprAnswers();
+    if (!answers.length) {
+      setAprRefinementConsent(false);
+      report(new Error("Answer at least one APR question before refining."));
+      return;
+    }
+    setBusy("refine");
+    try {
+      const value = await refineAccomplishment(
+        aprSuggestion.source,
+        aprSuggestion.value.questions,
+        answers,
+        aprRefinementConsent,
+      );
+      setAprRefinement({
+        value,
+        source: aprSuggestion.source,
+        answers,
+      });
+      setNotice({
+        kind: "success",
+        text: "Your refined rewrite is ready to review. Your resume has not been changed.",
+      });
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(null);
+      setAprRefinementConsent(false);
+    }
+  }
+
   function applyAprSuggestion() {
     if (!resume || !aprSuggestion) return;
     if (!aprSourceIsCurrent(aprSuggestion.source)) {
@@ -385,11 +477,39 @@ function App() {
         applyAprRewrite(resume, aprSuggestion.source, rewrite ?? ""),
       );
       setUndo(resume);
-      setAprSuggestion(null);
-      setAprTarget(null);
+      resetApr();
       setNotice({
         kind: "success",
         text: "APR rewrite applied to one accomplishment. You can undo this until your next edit.",
+      });
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  function applyAprRefinement() {
+    if (!resume || !aprRefinement) return;
+    if (!aprRefinementIsCurrent(aprRefinement)) {
+      report(
+        new Error(
+          "This accomplishment or its answers changed. Refine it again before applying.",
+        ),
+      );
+      return;
+    }
+    try {
+      changeResume(
+        applyAprRewrite(
+          resume,
+          aprRefinement.source,
+          aprRefinement.value.rewrite,
+        ),
+      );
+      setUndo(resume);
+      resetApr();
+      setNotice({
+        kind: "success",
+        text: "Refined APR rewrite applied to one accomplishment. You can undo this until your next edit.",
       });
     } catch (error) {
       report(error);
@@ -894,7 +1014,11 @@ function App() {
                     >
                       <fieldset
                         className="assistant-fieldset"
-                        disabled={busy === "generate" || busy === "analyze"}
+                        disabled={
+                          busy === "generate" ||
+                          busy === "analyze" ||
+                          busy === "refine"
+                        }
                       >
                         <CopilotPanel
                           resume={resume}
@@ -924,7 +1048,18 @@ function App() {
                             !aprSourceIsCurrent(aprSuggestion.source)
                           }
                           onApplyApr={applyAprSuggestion}
-                          onDiscardApr={() => setAprSuggestion(null)}
+                          onDiscardApr={resetApr}
+                          aprAnswers={aprAnswers}
+                          onAprAnswer={changeAprAnswer}
+                          aprRefinementConsent={aprRefinementConsent}
+                          onAprRefinementConsent={setAprRefinementConsent}
+                          onRefineApr={() => void refineApr()}
+                          aprRefinement={aprRefinement?.value ?? null}
+                          aprRefinementStale={
+                            aprRefinement !== null &&
+                            !aprRefinementIsCurrent(aprRefinement)
+                          }
+                          onApplyAprRefinement={applyAprRefinement}
                         />
                       </fieldset>
                     </div>

@@ -105,6 +105,12 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
   await expect(
     page.getByText("APR analysis is available only in the desktop app."),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Refine rewrite with answers" }),
+  ).toHaveCount(0);
+  await expect(page.getByTestId("resume-preview")).toContainText(
+    "Led the end-to-end redesign of a customer onboarding experience",
+  );
   await page.getByRole("tab", { name: "Design", exact: true }).click();
   await page
     .getByRole("button", { name: "Modern A crisp", exact: false })

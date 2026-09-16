@@ -34,8 +34,8 @@ connect to Copilot. It does not read your desktop workspace.
 - JSON workspace backups and validated, non-destructive imports.
 - Job-description keyword overlap and a transparent resume-essentials checklist.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
-  review, per-accomplishment APR analysis, stale-result protection, and one-step
-  undo until the next edit.
+  review, per-accomplishment APR analysis and answer-guided refinement,
+  stale-result protection, and one-step undo until the next edit.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details or click **try a fictional example**. The example
@@ -96,6 +96,24 @@ can update only the selected bullet and uses the existing one-step AI undo. If
 the role, bullet, position, experience, or active resume changes, the visible
 result is marked stale and cannot be applied until it is analyzed again.
 
+Each APR question has an optional multiline answer field. After entering at
+least one answer, check the separate, initially unchecked refinement consent and
+select **Refine rewrite with answers**. Blank answers are omitted; submitted
+answers are trimmed and paired with their displayed questions in order. The
+refinement request sends only those question-and-answer pairs plus the original
+role and bullet. It does not send IDs, APR feedback/status, the initial rewrite,
+contact fields, or other resume content.
+
+The original APR review remains visible beside one separately labeled latest
+refined rewrite. A successful repeat replaces only the prior refinement. Each
+candidate has its own explicit apply control and neither is automatic. Answers,
+refinement consent, and refined output are transient and are not saved in the
+workspace. Editing an answer clears refinement consent and makes only the prior
+refinement stale until the exact submitted nonblank answers are restored or a
+new refinement succeeds. CLI, timeout, malformed-output, and other request
+failures keep the review, answers, prior refinement, and resume unchanged while
+showing an error. Refinement is unavailable in the browser preview.
+
 ## Privacy and storage
 
 - No app analytics, remote fonts, cloud database, or background resume uploads.
@@ -108,10 +126,12 @@ result is marked stale and cannot be applied until it is analyzed again.
   browser data deletes that browser's workspace; export a backup first.
 - Whole-resume AI requests send the summary, work history, education, skills,
   professional headline, and job description to GitHub Copilot. APR requests
-  send only the selected accomplishment and its role. Dedicated name, email,
-  phone, personal location, website, GitHub, and local correlation IDs are
-  excluded. **Anything you type into free text can still contain identifying
-  information**; review and redact it yourself.
+  send only the selected accomplishment and its role; an answer-guided
+  refinement additionally sends only the nonblank displayed question/answer
+  pairs. Dedicated name, email, phone, personal location, website, GitHub, APR
+  diagnostics/initial rewrite, other resume fields, and local correlation IDs
+  are excluded. **Anything you type into free text can still contain
+  identifying information**; review and redact it yourself.
 - Copilot authentication and session state use the app's `copilot` directory.
   The CLI may retain prompts and responses there, and GitHub processes the
   request according to your account's policies. Local-first does not mean
@@ -157,9 +177,9 @@ The browser suite covers real editing, persistence, corrupt storage, imports,
 document management, and exported PDF text in Chromium and WebKit. It also
 checks ATS-relevant PDF compatibility: standard section headings, complete
 selectable text, and single-column extraction order. These checks do not claim
-compatibility with every ATS or provide a hiring score. Frontend unit tests
-cover schemas, keyword boundaries, save failures, and AI consent/review/undo.
-Native tests use fake CLI processes, including APR response and isolation
+compatibility with every ATS or provide a hiring score. Frontend unit tests cover schemas, keyword boundaries, save failures, and AI
+consent/review/undo, including answer binding and refinement staleness. Native
+tests use fake CLI processes, including APR/refinement response and isolation
 coverage; tests never authenticate or spend Copilot usage.
 
 ```sh

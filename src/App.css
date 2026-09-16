@@ -1555,7 +1555,44 @@ button {
   margin-top: 2px;
   padding-top: 12px;
 }
-.apr-analysis > .button {
+.apr-questions {
+  margin-top: 12px;
+}
+.apr-answer {
+  border-top: 1px solid #e7ecdf;
+  padding: 12px 0;
+}
+.apr-answer > p {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.apr-answer .field {
+  margin: 0;
+}
+.apr-answer textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+.apr-refinement-request {
+  border-top: 1px solid #d8e4c9;
+  margin-top: 4px;
+  padding-top: 12px;
+}
+.apr-refinement-request .generate-button {
+  width: 100%;
+}
+.apr-refinement {
+  border: 1px solid #cbdcae;
+  border-radius: 7px;
+  background: #f3f8e9;
+  margin-top: 14px;
+  padding: 12px;
+}
+.apr-refinement > p {
+  margin: 0 0 10px;
+}
+.apr-analysis > .button,
+.apr-refinement > .button {
   width: 100%;
   margin-top: 14px;
   font-size: 10px;

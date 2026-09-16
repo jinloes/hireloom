@@ -11,6 +11,7 @@ import {
   jobKeywords,
   type AiProposal,
   type AprAnalysis,
+  type AprRefinement,
   type AprTarget,
   type Resume,
 } from "../model";
@@ -40,11 +41,19 @@ export function CopilotPanel({
   aprStale,
   onApplyApr,
   onDiscardApr,
+  aprAnswers,
+  onAprAnswer,
+  aprRefinementConsent,
+  onAprRefinementConsent,
+  onRefineApr,
+  aprRefinement,
+  aprRefinementStale,
+  onApplyAprRefinement,
 }: {
   resume: Resume;
   onChange: (resume: Resume) => void;
   status: CopilotStatus | null;
-  busy: "login" | "generate" | "analyze" | "status" | null;
+  busy: "login" | "generate" | "analyze" | "refine" | "status" | null;
   consent: boolean;
   onConsent: (value: boolean) => void;
   onRefresh: () => void;
@@ -63,6 +72,14 @@ export function CopilotPanel({
   aprStale: boolean;
   onApplyApr: () => void;
   onDiscardApr: () => void;
+  aprAnswers: string[];
+  onAprAnswer: (index: number, value: string) => void;
+  aprRefinementConsent: boolean;
+  onAprRefinementConsent: (value: boolean) => void;
+  onRefineApr: () => void;
+  aprRefinement: AprRefinement | null;
+  aprRefinementStale: boolean;
+  onApplyAprRefinement: () => void;
 }) {
   const keywords = jobKeywords(resume);
   return (
@@ -401,14 +418,97 @@ export function CopilotPanel({
               </div>
             )}
             {aprAnalysis.questions.length > 0 && (
-              <div className="proposal-notes">
+              <div className="proposal-notes apr-questions">
                 <h3>Questions to strengthen the result</h3>
-                <ul>
-                  {aprAnalysis.questions.map((question, index) => (
-                    <li key={index}>{question}</li>
-                  ))}
-                </ul>
+                {aprAnalysis.questions.map((question, index) => (
+                  <div className="apr-answer" key={question}>
+                    <p>{question}</p>
+                    <Field
+                      label={`Answer ${index + 1}`}
+                      value={aprAnswers[index] ?? ""}
+                      onChange={(value) => onAprAnswer(index, value)}
+                      multiline
+                      rows={3}
+                      maxLength={2_000}
+                      hint="Optional. Only nonblank answers are sent."
+                    />
+                  </div>
+                ))}
+                <div className="apr-refinement-request">
+                  <p className="privacy-note apr-disclosure">
+                    <ShieldCheck size={18} />
+                    <span>
+                      A refinement sends only the role, original bullet, and
+                      your nonblank question-and-answer pairs. Unanswered
+                      questions, resume IDs, APR feedback, the initial rewrite,
+                      contact details, and all other resume data stay local.
+                    </span>
+                  </p>
+                  <label className="consent-check">
+                    <input
+                      type="checkbox"
+                      checked={aprRefinementConsent}
+                      onChange={(event) =>
+                        onAprRefinementConsent(event.target.checked)
+                      }
+                      disabled={busy === "refine" || !desktop || aprStale}
+                    />
+                    <span>
+                      Send these nonblank answers with the selected role and
+                      bullet to GitHub Copilot for this refinement request.
+                    </span>
+                  </label>
+                  <button
+                    className="button primary generate-button"
+                    disabled={
+                      !desktop ||
+                      !status?.available ||
+                      aprStale ||
+                      !aprAnswers.some((answer) => answer.trim()) ||
+                      !aprRefinementConsent ||
+                      Boolean(busy)
+                    }
+                    onClick={onRefineApr}
+                  >
+                    {busy === "refine" ? (
+                      <LoaderCircle className="spin" size={17} />
+                    ) : (
+                      <Sparkles size={17} />
+                    )}
+                    {busy === "refine"
+                      ? "Refining rewrite…"
+                      : "Refine rewrite with answers"}
+                  </button>
+                  {!desktop && (
+                    <p className="fine-print" role="status">
+                      APR refinement is available only in the desktop app.
+                    </p>
+                  )}
+                </div>
               </div>
+            )}
+            {aprRefinement && (
+              <section
+                className="apr-refinement"
+                aria-label="Latest refined rewrite"
+              >
+                <h3>Latest refined rewrite</h3>
+                <p>{aprRefinement.rewrite}</p>
+                {aprRefinementStale && (
+                  <p className="inline-error">
+                    This accomplishment or its answers changed after refinement.
+                    Restore the submitted answers or refine again before
+                    applying.
+                  </p>
+                )}
+                <button
+                  className="button primary"
+                  disabled={aprRefinementStale || Boolean(busy)}
+                  onClick={onApplyAprRefinement}
+                >
+                  <CheckCheck size={16} /> Apply refined rewrite
+                </button>
+              </section>
             )}
             {aprStale && (
               <p className="inline-error">
@@ -426,7 +526,7 @@ export function CopilotPanel({
               }
               onClick={onApplyApr}
             >
-              <CheckCheck size={16} /> Apply this rewrite
+              <CheckCheck size={16} /> Apply initial rewrite
             </button>
           </section>
         )}
