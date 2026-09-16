@@ -3,6 +3,9 @@ import { z } from "zod";
 const id = z.string().min(1).max(100);
 const shortText = z.string().max(500);
 const bullet = z.string().max(2_000);
+const nonemptyBullet = bullet.refine((value) => value.trim().length > 0, {
+  message: "Text must not be blank.",
+});
 
 export const experienceSchema = z.strictObject({
   id,
@@ -98,11 +101,36 @@ export const proposalSchema = z.strictObject({
   notes: z.array(z.string().max(2_000)).max(20),
 });
 
+export const aprTargetSchema = z.strictObject({
+  resumeId: id,
+  experienceId: id,
+  bulletIndex: z.number().int().min(0).max(29),
+  role: shortText,
+  bullet: nonemptyBullet,
+});
+
+export const aprDimensionSchema = z.strictObject({
+  status: z.enum(["clear", "partial", "missing"]),
+  feedback: nonemptyBullet,
+});
+
+export const aprAnalysisSchema = z.strictObject({
+  target: aprTargetSchema,
+  action: aprDimensionSchema,
+  project: aprDimensionSchema,
+  result: aprDimensionSchema,
+  rewrite: z.string().max(2_000).optional(),
+  questions: z.array(nonemptyBullet).max(5),
+});
+
 export type Resume = z.infer<typeof resumeSchema>;
 export type Experience = Resume["experience"][number];
 export type Education = Resume["education"][number];
 export type Workspace = z.infer<typeof workspaceSchema>;
 export type AiProposal = z.infer<typeof proposalSchema>;
+export type AprTarget = z.infer<typeof aprTargetSchema>;
+export type AprDimension = z.infer<typeof aprDimensionSchema>;
+export type AprAnalysis = z.infer<typeof aprAnalysisSchema>;
 
 export const MAX_WORKSPACE_BYTES = 2 * 1024 * 1024;
 export const accents = {
@@ -261,6 +289,71 @@ export function applyProposal(resume: Resume, proposal: AiProposal): Resume {
         (suggestion) => suggestion.id === entry.id,
       )!.bullets,
     })),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function validateAprTarget(value: unknown, resume?: Resume): AprTarget {
+  const target = aprTargetSchema.parse(value);
+  if (resume) {
+    const experience = resume.experience.find(
+      (entry) => entry.id === target.experienceId,
+    );
+    if (
+      resume.id !== target.resumeId ||
+      !experience ||
+      experience.role !== target.role ||
+      experience.bullets[target.bulletIndex] !== target.bullet
+    ) {
+      throw new Error(
+        "The selected accomplishment no longer matches this resume.",
+      );
+    }
+  }
+  return target;
+}
+
+export function validateAprAnalysis(
+  value: unknown,
+  expectedTarget: AprTarget,
+): AprAnalysis {
+  const analysis = aprAnalysisSchema.parse(value);
+  if (
+    analysis.target.resumeId !== expectedTarget.resumeId ||
+    analysis.target.experienceId !== expectedTarget.experienceId ||
+    analysis.target.bulletIndex !== expectedTarget.bulletIndex ||
+    analysis.target.role !== expectedTarget.role ||
+    analysis.target.bullet !== expectedTarget.bullet
+  ) {
+    throw new Error(
+      "Copilot returned an analysis for a different accomplishment. Nothing has been changed.",
+    );
+  }
+  return analysis;
+}
+
+export function applyAprRewrite(
+  resume: Resume,
+  target: AprTarget,
+  rewrite: string,
+): Resume {
+  const validTarget = validateAprTarget(target, resume);
+  const validRewrite = bullet.parse(rewrite);
+  if (!validRewrite.trim() || validRewrite === validTarget.bullet) {
+    throw new Error("Copilot did not provide a changed, nonempty rewrite.");
+  }
+  return {
+    ...resume,
+    experience: resume.experience.map((entry) =>
+      entry.id === validTarget.experienceId
+        ? {
+            ...entry,
+            bullets: entry.bullets.map((text, index) =>
+              index === validTarget.bulletIndex ? validRewrite : text,
+            ),
+          }
+        : entry,
+    ),
     updatedAt: new Date().toISOString(),
   };
 }

@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  applyAprRewrite,
   applyProposal,
   createResume,
   documentFilename,
@@ -32,10 +33,13 @@ import {
   MAX_WORKSPACE_BYTES,
   parseWorkspace,
   resumeReadiness,
+  type AprAnalysis,
+  type AprTarget,
   type AiProposal,
   type Resume,
 } from "./model";
 import {
+  analyzeAccomplishment,
   copilotStatus,
   desktop,
   exportDocument,
@@ -54,6 +58,7 @@ import "./App.css";
 type Tab = "content" | "copilot" | "style";
 type Notice = { kind: "success" | "error"; text: string };
 type Suggestion = { value: AiProposal; source: string };
+type AprSuggestion = { value: AprAnalysis; source: AprTarget };
 
 function App() {
   const {
@@ -71,11 +76,16 @@ function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [exporting, setExporting] = useState(false);
   const [copilot, setCopilot] = useState<CopilotStatus | null>(null);
-  const [busy, setBusy] = useState<"status" | "login" | "generate" | null>(
-    null,
-  );
+  const [busy, setBusy] = useState<
+    "status" | "login" | "generate" | "analyze" | null
+  >(null);
   const [consent, setConsent] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  const [aprTarget, setAprTarget] = useState<AprTarget | null>(null);
+  const [aprConsent, setAprConsent] = useState(false);
+  const [aprSuggestion, setAprSuggestion] = useState<AprSuggestion | null>(
+    null,
+  );
   const [undo, setUndo] = useState<Resume | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showTools, setShowTools] = useState(false);
@@ -84,7 +94,13 @@ function App() {
   const resume = workspace?.resumes.find(
     (item) => item.id === workspace.activeResumeId,
   );
-  const blocked = busy === "generate" || busy === "login";
+  const blocked = busy === "generate" || busy === "analyze" || busy === "login";
+
+  function resetApr() {
+    setAprTarget(null);
+    setAprConsent(false);
+    setAprSuggestion(null);
+  }
 
   const report = (error: unknown) =>
     setNotice({ kind: "error", text: errorMessage(error) });
@@ -121,6 +137,8 @@ function App() {
     setLibrary(false);
     setSuggestion(null);
     setConsent(false);
+    setAprTarget(null);
+    setAprConsent(false);
     setUndo(null);
   }
 
@@ -143,6 +161,7 @@ function App() {
     setSuggestion(null);
     setUndo(null);
     setConsent(false);
+    resetApr();
   }
 
   async function exportPdf() {
@@ -218,6 +237,7 @@ function App() {
       setSuggestion(null);
       setUndo(null);
       setConsent(false);
+      resetApr();
       setLibrary(false);
       setNotice({
         kind: "success",
@@ -289,6 +309,7 @@ function App() {
       );
       return;
     }
+
     try {
       changeResume(applyProposal(resume, suggestion.value));
       setUndo(resume);
@@ -296,6 +317,79 @@ function App() {
       setNotice({
         kind: "success",
         text: "Suggestions applied. You can undo this until your next edit.",
+      });
+    } catch (error) {
+      report(error);
+    }
+  }
+
+  function selectAccomplishment(target: AprTarget) {
+    setAprTarget(target);
+    setAprConsent(false);
+    setAprSuggestion(null);
+  }
+
+  async function analyzeApr() {
+    if (!resume || !aprTarget) return;
+    if (!aprSourceIsCurrent(aprTarget)) {
+      setAprConsent(false);
+      report(
+        new Error(
+          "This accomplishment changed. Select it again before sending it to Copilot.",
+        ),
+      );
+      return;
+    }
+    setBusy("analyze");
+    setAprSuggestion(null);
+    try {
+      const value = await analyzeAccomplishment(aprTarget, aprConsent);
+      setAprSuggestion({ value, source: aprTarget });
+      setNotice({
+        kind: "success",
+        text: "Your APR analysis is ready to review. Your resume has not been changed.",
+      });
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(null);
+      setAprConsent(false);
+    }
+  }
+
+  function aprSourceIsCurrent(source: AprTarget): boolean {
+    if (!resume || resume.id !== source.resumeId) return false;
+    const experience = resume.experience.find(
+      (entry) => entry.id === source.experienceId,
+    );
+    return Boolean(
+      experience &&
+      experience.role === source.role &&
+      experience.bullets[source.bulletIndex] === source.bullet,
+    );
+  }
+
+  function applyAprSuggestion() {
+    if (!resume || !aprSuggestion) return;
+    if (!aprSourceIsCurrent(aprSuggestion.source)) {
+      report(
+        new Error(
+          "This accomplishment changed. Analyze it again before applying.",
+        ),
+      );
+      return;
+    }
+    const rewrite = aprSuggestion.value.rewrite;
+    try {
+      changeResume(
+        applyAprRewrite(resume, aprSuggestion.source, rewrite ?? ""),
+      );
+      setUndo(resume);
+      setAprSuggestion(null);
+      setAprTarget(null);
+      setNotice({
+        kind: "success",
+        text: "APR rewrite applied to one accomplishment. You can undo this until your next edit.",
       });
     } catch (error) {
       report(error);
@@ -316,6 +410,8 @@ function App() {
     });
     setDeleteId(null);
     setSuggestion(null);
+    setConsent(false);
+    resetApr();
     setUndo(null);
   }
 
@@ -798,7 +894,7 @@ function App() {
                     >
                       <fieldset
                         className="assistant-fieldset"
-                        disabled={busy === "generate"}
+                        disabled={busy === "generate" || busy === "analyze"}
                       >
                         <CopilotPanel
                           resume={resume}
@@ -817,6 +913,18 @@ function App() {
                           }
                           onApply={applySuggestions}
                           onDiscard={() => setSuggestion(null)}
+                          aprTarget={aprTarget}
+                          onSelectApr={selectAccomplishment}
+                          aprConsent={aprConsent}
+                          onAprConsent={setAprConsent}
+                          onAnalyzeApr={() => void analyzeApr()}
+                          aprAnalysis={aprSuggestion?.value ?? null}
+                          aprStale={
+                            aprSuggestion !== null &&
+                            !aprSourceIsCurrent(aprSuggestion.source)
+                          }
+                          onApplyApr={applyAprSuggestion}
+                          onDiscardApr={() => setAprSuggestion(null)}
                         />
                       </fieldset>
                     </div>

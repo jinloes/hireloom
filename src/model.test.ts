@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAprRewrite,
   applyProposal,
   createResume,
   documentFilename,
@@ -11,6 +12,8 @@ import {
   parseWorkspace,
   resumeReadiness,
   validateProposal,
+  validateAprAnalysis,
+  validateAprTarget,
   type Resume,
 } from "./model";
 
@@ -95,6 +98,79 @@ describe("AI proposals", () => {
       `Rewritten ${resume.experience[0].role}`,
     ]);
     expect(resume.summary).not.toEqual(updated.summary);
+  });
+
+  describe("APR accomplishment analysis", () => {
+    it("validates exact targets and applies only the selected bullet", () => {
+      const resume = exampleResume();
+      const target = {
+        resumeId: resume.id,
+        experienceId: resume.experience[0].id,
+        bulletIndex: 1,
+        role: resume.experience[0].role,
+        bullet: resume.experience[0].bullets[1],
+      };
+      expect(validateAprTarget(target, resume)).toEqual(target);
+      const updated = applyAprRewrite(
+        resume,
+        target,
+        "Built a shared, accessible design system with engineering partners.",
+      );
+      expect(updated.experience[0].bullets[1]).toContain("accessible");
+      expect(updated.experience[0].bullets[0]).toBe(
+        resume.experience[0].bullets[0],
+      );
+      expect(updated.experience[1]).toEqual(resume.experience[1]);
+      expect(updated.basics).toEqual(resume.basics);
+      expect(updated.summary).toBe(resume.summary);
+    });
+
+    it("rejects stale, malformed, oversized, and mismatched APR data", () => {
+      const resume = exampleResume();
+      const target = {
+        resumeId: resume.id,
+        experienceId: resume.experience[0].id,
+        bulletIndex: 0,
+        role: resume.experience[0].role,
+        bullet: resume.experience[0].bullets[0],
+      };
+      const analysis = {
+        target,
+        action: { status: "clear" as const, feedback: "Specific action." },
+        project: { status: "partial" as const, feedback: "Add context." },
+        result: {
+          status: "missing" as const,
+          feedback: "Add supported impact.",
+        },
+        rewrite: "Led a focused onboarding redesign.",
+        questions: ["What changed after the redesign?"],
+      };
+      expect(validateAprAnalysis(analysis, target)).toEqual(analysis);
+      expect(() =>
+        validateAprAnalysis(
+          { ...analysis, target: { ...target, bulletIndex: 1 } },
+          target,
+        ),
+      ).toThrow("different accomplishment");
+      expect(() =>
+        validateAprAnalysis({ ...analysis, invented: true }, target),
+      ).toThrow();
+      expect(() =>
+        validateAprAnalysis(
+          { ...analysis, questions: Array(6).fill("Question?") },
+          target,
+        ),
+      ).toThrow();
+      expect(() =>
+        validateAprTarget({ ...target, bullet: "x".repeat(2_001) }, resume),
+      ).toThrow();
+      expect(() => applyAprRewrite(resume, target, target.bullet)).toThrow(
+        "changed",
+      );
+      expect(() =>
+        validateAprTarget({ ...target, role: "Changed role" }, resume),
+      ).toThrow("no longer matches");
+    });
   });
 
   it("rejects unknown, duplicate, missing and extra factual fields", () => {

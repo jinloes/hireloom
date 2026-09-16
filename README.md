@@ -34,7 +34,8 @@ connect to Copilot. It does not read your desktop workspace.
 - JSON workspace backups and validated, non-destructive imports.
 - Job-description keyword overlap and a transparent resume-essentials checklist.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
-  review, stale-result protection, and one-step undo until the next edit.
+  review, per-accomplishment APR analysis, stale-result protection, and one-step
+  undo until the next edit.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details or click **try a fictional example**. The example
@@ -61,7 +62,16 @@ in through Hireloom even if you already use Copilot for development. It does not
 store an API key in the frontend or bundle the CLI. The app invokes the CLI from
 Rust without a shell, sends the prompt through stdin, disables model tools,
 custom instructions, hooks, built-in MCP servers, and remote session sharing,
-and uses a neutral working directory instead of your projects.
+and uses a neutral working directory instead of your projects. The subprocess
+retains your real OS home only so the CLI can use the system credential store;
+Copilot, GitHub CLI, cache, temporary, and working files remain redirected to
+Hireloom-owned directories. Whole-resume and APR requests are pinned to
+`gpt-5.6-luna` for consistent behavior. If that model is unavailable to the
+signed-in account or installed CLI, the request fails visibly instead of
+silently switching models. Responses use the CLI's JSON event stream so quoted
+feedback remains valid structured data. Hireloom also accepts the CLI's
+commented JSON configuration format while preserving existing settings and
+enforcing its isolation controls.
 
 Add real experience or skills, optionally paste a job description, and check the
 consent box for each request. Copilot proposes a summary and experience
@@ -69,6 +79,22 @@ highlights; it does not modify employer names, dates, education, or skills.
 **Review every claim before applying.** AI can still make mistakes or invent
 details. Suggestions are never silently applied. CLI errors, expired login,
 malformed output, and the three-minute timeout leave your resume unchanged.
+
+The **Analyze accomplishments** section reviews one nonempty experience bullet
+at a time using the Yale Office of Career Strategy's Action + Project + Result
+(APR) method. Action identifies your specific contribution, Project gives the
+meaningful work or problem context, and Result describes supported impact
+(quantified only when your facts support it). Each part is marked clear,
+partial, or missing, with improvement feedback, an optional fact-preserving
+rewrite, and up to five questions that can help you add missing factual detail.
+
+Selecting **Analyze with APR** shows the exact bullet first. A separate,
+initially unchecked consent is required for every analysis. Only that bullet
+and its role text are sent; resume and experience IDs and the bullet position
+remain local. Results are review-only and never apply automatically. A rewrite
+can update only the selected bullet and uses the existing one-step AI undo. If
+the role, bullet, position, experience, or active resume changes, the visible
+result is marked stale and cannot be applied until it is analyzed again.
 
 ## Privacy and storage
 
@@ -80,11 +106,12 @@ malformed output, and the three-minute timeout leave your resume unchanged.
   protect backups, and avoid shared OS accounts.
 - Browser previews use the `hireloom.workspace.v1` localStorage key. Clearing
   browser data deletes that browser's workspace; export a backup first.
-- AI sends the summary, work history, education, skills, professional headline,
-  and job description to GitHub Copilot. Dedicated name, email, phone, personal
-  location, website, and GitHub fields are excluded. **Anything you type into
-  free text can still contain identifying information**; review and redact it
-  yourself.
+- Whole-resume AI requests send the summary, work history, education, skills,
+  professional headline, and job description to GitHub Copilot. APR requests
+  send only the selected accomplishment and its role. Dedicated name, email,
+  phone, personal location, website, GitHub, and local correlation IDs are
+  excluded. **Anything you type into free text can still contain identifying
+  information**; review and redact it yourself.
 - Copilot authentication and session state use the app's `copilot` directory.
   The CLI may retain prompts and responses there, and GitHub processes the
   request according to your account's policies. Local-first does not mean
@@ -132,8 +159,8 @@ checks ATS-relevant PDF compatibility: standard section headings, complete
 selectable text, and single-column extraction order. These checks do not claim
 compatibility with every ATS or provide a hiring score. Frontend unit tests
 cover schemas, keyword boundaries, save failures, and AI consent/review/undo.
-Native tests use fake CLI processes; tests never authenticate or spend Copilot
-usage.
+Native tests use fake CLI processes, including APR response and isolation
+coverage; tests never authenticate or spend Copilot usage.
 
 ```sh
 npm run tauri build

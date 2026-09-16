@@ -1,10 +1,14 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
+  type AprAnalysis,
+  type AprTarget,
   type AiProposal,
   type Resume,
   type Workspace,
   MAX_WORKSPACE_BYTES,
   parseWorkspace,
+  validateAprAnalysis,
+  validateAprTarget,
   validateProposal,
   workspaceSchema,
 } from "./model";
@@ -91,5 +95,24 @@ export async function generateResume(
   return validateProposal(
     await invoke<unknown>("generate_resume", { resume, consent }),
     resume,
+  );
+}
+
+export async function analyzeAccomplishment(
+  target: AprTarget,
+  consent: boolean,
+): Promise<AprAnalysis> {
+  if (!desktop) throw new Error("APR analysis requires the desktop app.");
+  if (!consent)
+    throw new Error(
+      "Confirm that you want to send this accomplishment to Copilot.",
+    );
+  const validTarget = validateAprTarget(target);
+  return validateAprAnalysis(
+    await invoke<unknown>("analyze_accomplishment", {
+      ...validTarget,
+      consent,
+    }),
+    validTarget,
   );
 }

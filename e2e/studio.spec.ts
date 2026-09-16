@@ -87,6 +87,24 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
   await expect(page.getByTestId("resume-preview")).toContainText(
     "Mar 2021 – Sep 2025",
   );
+  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
+  const aprActions = page.getByRole("button", { name: "Analyze with APR" });
+  await expect(aprActions.first()).toBeVisible();
+  await aprActions.first().click();
+  await expect(
+    page.getByText("Only this bullet and the role", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("checkbox", {
+      name: /Send this selected bullet and role/,
+    }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Confirm APR analysis" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("APR analysis is available only in the desktop app."),
+  ).toBeVisible();
   await page.getByRole("tab", { name: "Design", exact: true }).click();
   await page
     .getByRole("button", { name: "Modern A crisp", exact: false })

@@ -88,14 +88,15 @@ The browser preview uses only `hireloom.workspace.v1` in `localStorage`.
 `src/platform.ts` is the only frontend module that chooses between Tauri and
 browser behavior. Its desktop methods invoke:
 
-| Command           | Direction     | Result                                    |
-| ----------------- | ------------- | ----------------------------------------- |
-| `load_workspace`  | Rust to React | Validated workspace or no saved file      |
-| `save_workspace`  | React to Rust | Atomically persisted workspace            |
-| `export_document` | React to Rust | User-selected PDF/JSON save result        |
-| `copilot_status`  | React to Rust | Local CLI availability and version detail |
-| `copilot_login`   | React to Rust | App-specific web login completion         |
-| `generate_resume` | React to Rust | Validated, non-applied AI proposal        |
+| Command                  | Direction     | Result                                         |
+| ------------------------ | ------------- | ---------------------------------------------- |
+| `load_workspace`         | Rust to React | Validated workspace or no saved file           |
+| `save_workspace`         | React to Rust | Atomically persisted workspace                 |
+| `export_document`        | React to Rust | User-selected PDF/JSON save result             |
+| `copilot_status`         | React to Rust | Local CLI availability and version detail      |
+| `copilot_login`          | React to Rust | App-specific web login completion              |
+| `generate_resume`        | React to Rust | Validated, non-applied AI proposal             |
+| `analyze_accomplishment` | React to Rust | Validated, transient APR review for one bullet |
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.
@@ -117,16 +118,36 @@ AI is an opt-in editing aid, not an autonomous actor:
    fields are omitted from prompt data.
 4. The prompt labels all resume/job text as untrusted and forbids following
    embedded instructions or inventing facts.
-5. Rust starts the CLI directly without a shell, in a neutral app-owned working
-   directory and app-specific home.
-6. Hooks, memory, IDE auto-connect, tools, built-in MCPs, custom instructions,
+5. Rust starts the CLI directly without a shell in a neutral app-owned working
+   directory. It preserves the real OS home so the CLI can reach the system
+   credential store, while `COPILOT_HOME`, `GH_CONFIG_DIR`, XDG paths, cache, and
+   temporary storage remain app-owned.
+6. Whole-resume and APR requests explicitly use `gpt-5.6-luna`; unavailable
+   model access is surfaced as a request failure with no fallback.
+7. The app reads the CLI-owned JSON-with-comments configuration, preserves its
+   existing settings, and atomically writes strict JSON with Hireloom's
+   isolation controls enforced.
+8. Hooks, memory, IDE auto-connect, tools, built-in MCPs, custom instructions,
    remote features, and auto-update are disabled.
-7. Environment inheritance is allowlisted; process duration and output size are
+9. Environment inheritance is allowlisted; process duration and output size are
    capped.
-8. The response must match a strict proposal schema and contain exactly the
-   original experience IDs.
-9. React validates the proposal again, displays it for review, rejects stale
-   proposals, and applies only summary and experience bullets.
+10. CLI output uses JSON events, and Rust extracts only the final assistant text
+    before applying the feature-specific response schema. This avoids the
+    plain-text renderer changing JSON escape sequences.
+11. The response must match a strict proposal schema and contain exactly the
+    original experience IDs.
+12. React validates the proposal again, displays it for review, rejects stale
+    proposals, and applies only summary and experience bullets.
+
+APR analysis uses the same isolation and generation lock but a narrower
+contract. React keeps resume ID, experience ID, and bullet index as local
+correlation state. Rust receives and validates that target, sends only the role
+and selected bullet as delimited untrusted prompt data, strictly validates the
+Action/Project/Result response, and attaches the unchanged local target to the
+result. The result is transient. React revalidates the echoed target and permits
+an explicit apply only while the active resume, experience, role, bullet index,
+and bullet text still match. Changes to unsent fields do not stale it, and the
+single-bullet helper cannot change adjacent bullets or other resume fields.
 
 Copilot authentication and request data may be retained inside the app-specific
 Copilot directory and processed under GitHub account policies. "Local-first"
@@ -184,6 +205,21 @@ per-request consent
   -> summary/bullets only + undo snapshot
 ```
 
+### APR accomplishment analysis
+
+```text
+select one nonempty bullet
+  -> show exact bullet + role-only disclosure
+  -> separate single-use consent
+  -> platform.analyzeAccomplishment
+  -> Rust target validation + isolated shared Copilot runner
+  -> role and bullet only in delimited untrusted prompt data
+  -> strict APR response validation + local target echo
+  -> visible Action / Project / Result feedback and factual questions
+  -> stale-target guard
+  -> optional explicit single-bullet rewrite + existing undo snapshot
+```
+
 ## Trust boundaries and invariants
 
 - **Imported files are untrusted.** Enforce byte limits before parsing and
@@ -193,7 +229,9 @@ per-request consent
 - **Job descriptions and resume text are untrusted prompt data.** They cannot
   alter system instructions.
 - **AI output is untrusted.** It cannot introduce fields or change factual
-  records; exact experience identity is required.
+  records; exact experience identity is required for whole-resume proposals,
+  while APR output is rebound to and revalidated against the exact local bullet
+  target.
 - **Filesystem choices belong to the user.** Exports use the native save dialog;
   the renderer does not choose arbitrary paths.
 - **A missing workspace differs from a corrupt workspace.** Missing creates a
@@ -205,7 +243,8 @@ per-request consent
 
 ## Verification strategy
 
-- Vitest covers domain invariants and React workflows with mocked platform APIs.
+- Vitest covers domain invariants and React workflows with mocked platform APIs,
+  including APR consent, staleness, and exact single-bullet application.
 - Rust unit tests cover native validation, atomic writes, prompt redaction,
   process isolation flags, bounded execution, and malformed responses.
 - Playwright exercises the browser adapter in Chromium and WebKit, including

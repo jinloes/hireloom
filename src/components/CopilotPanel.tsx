@@ -7,7 +7,13 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { jobKeywords, type AiProposal, type Resume } from "../model";
+import {
+  jobKeywords,
+  type AiProposal,
+  type AprAnalysis,
+  type AprTarget,
+  type Resume,
+} from "../model";
 import { desktop, type CopilotStatus } from "../platform";
 import { Field } from "./Editor";
 
@@ -25,11 +31,20 @@ export function CopilotPanel({
   stale,
   onApply,
   onDiscard,
+  aprTarget,
+  onSelectApr,
+  aprConsent,
+  onAprConsent,
+  onAnalyzeApr,
+  aprAnalysis,
+  aprStale,
+  onApplyApr,
+  onDiscardApr,
 }: {
   resume: Resume;
   onChange: (resume: Resume) => void;
   status: CopilotStatus | null;
-  busy: "login" | "generate" | "status" | null;
+  busy: "login" | "generate" | "analyze" | "status" | null;
   consent: boolean;
   onConsent: (value: boolean) => void;
   onRefresh: () => void;
@@ -39,6 +54,15 @@ export function CopilotPanel({
   stale: boolean;
   onApply: () => void;
   onDiscard: () => void;
+  aprTarget: AprTarget | null;
+  onSelectApr: (target: AprTarget) => void;
+  aprConsent: boolean;
+  onAprConsent: (value: boolean) => void;
+  onAnalyzeApr: () => void;
+  aprAnalysis: AprAnalysis | null;
+  aprStale: boolean;
+  onApplyApr: () => void;
+  onDiscardApr: () => void;
 }) {
   const keywords = jobKeywords(resume);
   return (
@@ -236,6 +260,177 @@ export function CopilotPanel({
           </button>
         </section>
       )}
+      <section className="apr-section" aria-labelledby="apr-heading">
+        <div className="card-heading">
+          <div>
+            <span className="eyebrow">ACTION · PROJECT · RESULT</span>
+            <h2 id="apr-heading">Analyze accomplishments</h2>
+          </div>
+        </div>
+        <p className="fine-print">
+          Review one accomplishment at a time for a specific action, meaningful
+          project, and supported result. Copilot may suggest improvements, but
+          you decide whether to apply them.
+        </p>
+        <div className="accomplishment-groups">
+          {resume.experience.map((experience) => {
+            const accomplishments = experience.bullets
+              .map((text, bulletIndex) => ({ text, bulletIndex }))
+              .filter(({ text }) => text.trim());
+            if (!accomplishments.length) return null;
+            return (
+              <div className="accomplishment-group" key={experience.id}>
+                <h3>{experience.role.trim() || "Untitled role"}</h3>
+                <ul>
+                  {accomplishments.map(({ text, bulletIndex }) => {
+                    const selected =
+                      aprTarget?.resumeId === resume.id &&
+                      aprTarget.experienceId === experience.id &&
+                      aprTarget.bulletIndex === bulletIndex;
+                    return (
+                      <li key={bulletIndex}>
+                        <p>{text}</p>
+                        <button
+                          className="button secondary small"
+                          aria-pressed={selected}
+                          onClick={() =>
+                            onSelectApr({
+                              resumeId: resume.id,
+                              experienceId: experience.id,
+                              bulletIndex,
+                              role: experience.role,
+                              bullet: text,
+                            })
+                          }
+                        >
+                          Analyze with APR
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+          {!resume.experience.some((experience) =>
+            experience.bullets.some((text) => text.trim()),
+          ) && (
+            <p className="fine-print">
+              Add a nonempty experience accomplishment to analyze it.
+            </p>
+          )}
+        </div>
+        {aprTarget && (
+          <div className="apr-request-card">
+            <h3>Selected accomplishment</h3>
+            <blockquote>{aprTarget.bullet}</blockquote>
+            <p className="privacy-note apr-disclosure">
+              <ShieldCheck size={18} />
+              <span>
+                Only this bullet and the role “
+                {aprTarget.role || "Untitled role"}” will be sent to GitHub
+                Copilot. Resume IDs and the bullet position stay local.
+              </span>
+            </p>
+            <label className="consent-check">
+              <input
+                type="checkbox"
+                checked={aprConsent}
+                onChange={(event) => onAprConsent(event.target.checked)}
+                disabled={busy === "analyze" || !desktop}
+              />
+              <span>
+                Send this selected bullet and role to GitHub Copilot for this
+                APR request.
+              </span>
+            </label>
+            <button
+              className="button primary generate-button"
+              disabled={
+                !desktop || !status?.available || !aprConsent || Boolean(busy)
+              }
+              onClick={onAnalyzeApr}
+            >
+              {busy === "analyze" ? (
+                <LoaderCircle className="spin" size={17} />
+              ) : (
+                <Sparkles size={17} />
+              )}
+              {busy === "analyze"
+                ? "Analyzing accomplishment…"
+                : "Confirm APR analysis"}
+            </button>
+            {!desktop && (
+              <p className="fine-print" role="status">
+                APR analysis is available only in the desktop app.
+              </p>
+            )}
+          </div>
+        )}
+        {aprAnalysis && (
+          <section className="apr-analysis" aria-label="APR analysis">
+            <div className="card-heading">
+              <strong>
+                <Sparkles size={16} /> APR review
+              </strong>
+              <button
+                className="icon-button"
+                aria-label="Discard APR analysis"
+                onClick={onDiscardApr}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="fine-print">
+              Review every claim. Ask yourself the follow-up questions before
+              adding facts or metrics.
+            </p>
+            {(["action", "project", "result"] as const).map((dimension) => (
+              <div className="apr-dimension" key={dimension}>
+                <h3>{dimension}</h3>
+                <span className={`apr-status ${aprAnalysis[dimension].status}`}>
+                  {aprAnalysis[dimension].status}
+                </span>
+                <p>{aprAnalysis[dimension].feedback}</p>
+              </div>
+            ))}
+            {aprAnalysis.rewrite !== undefined && (
+              <div className="apr-rewrite">
+                <h3>Suggested rewrite</h3>
+                <p>{aprAnalysis.rewrite || "(No rewrite suggested)"}</p>
+              </div>
+            )}
+            {aprAnalysis.questions.length > 0 && (
+              <div className="proposal-notes">
+                <h3>Questions to strengthen the result</h3>
+                <ul>
+                  {aprAnalysis.questions.map((question, index) => (
+                    <li key={index}>{question}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {aprStale && (
+              <p className="inline-error">
+                This accomplishment or its role changed after analysis. Analyze
+                it again before applying.
+              </p>
+            )}
+            <button
+              className="button primary"
+              disabled={
+                aprStale ||
+                Boolean(busy) ||
+                !aprAnalysis.rewrite?.trim() ||
+                aprAnalysis.rewrite === aprAnalysis.target.bullet
+              }
+              onClick={onApplyApr}
+            >
+              <CheckCheck size={16} /> Apply this rewrite
+            </button>
+          </section>
+        )}
+      </section>
       <div className="setup-note">
         <strong>First-time setup</strong>
         <p>
