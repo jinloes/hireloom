@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Hireloom local-first AI resume workspace"
 authors = ["you"]
 edition = "2021"
+license-file = "../LICENSE.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

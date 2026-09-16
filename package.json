@@ -2,6 +2,7 @@
   "name": "hireloom",
   "description": "Your experience, beautifully told. A local-first AI resume studio.",
   "private": true,
+  "license": "SEE LICENSE IN LICENSE.md",
   "version": "0.1.0",
   "type": "module",
   "scripts": {

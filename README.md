@@ -227,3 +227,9 @@ Noto Sans and Noto Serif are bundled locally under the
 Latin, Greek, and Cyrillic; full CJK, emoji, and right-to-left layout support are
 not provided by this MVP. The name Hireloom is a working project name; trademark
 and domain availability have not been checked.
+
+## License
+
+Hireloom is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md). Commercial use is not
+permitted without a separate license from the licensor.
