@@ -138,11 +138,32 @@ export const aprQuestionAnswerSchema = z.strictObject({
   answer: nonemptyBullet,
 });
 
-export const aprRefinementSchema = z.strictObject({
-  target: aprTargetSchema,
-  answers: z.array(aprQuestionAnswerSchema).min(1).max(5),
-  rewrite: nonemptyBullet,
-});
+export const aprRefinementSchema = z
+  .strictObject({
+    target: aprTargetSchema,
+    answers: z.array(aprQuestionAnswerSchema).max(5),
+    additionalContext: bullet,
+    rewrite: nonemptyBullet,
+  })
+  .superRefine((refinement, ctx) => {
+    if (
+      refinement.answers.length === 0 &&
+      refinement.additionalContext.trim().length === 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide at least one answer or additional context.",
+        path: ["additionalContext"],
+      });
+    }
+    if (refinement.additionalContext !== refinement.additionalContext.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Additional context must be trimmed.",
+        path: ["additionalContext"],
+      });
+    }
+  });
 
 export type Resume = z.infer<typeof resumeSchema>;
 export type Experience = Resume["experience"][number];
@@ -372,6 +393,10 @@ export function normalizeAprAnswers(
   });
 }
 
+export function normalizeAprAdditionalContext(value: string): string {
+  return bullet.parse(value).trim();
+}
+
 export function validateAprQuestionAnswers(
   questions: string[],
   value: unknown,
@@ -380,7 +405,7 @@ export function validateAprQuestionAnswers(
   if (new Set(validQuestions).size !== validQuestions.length) {
     throw new Error("APR questions must be unique.");
   }
-  const answers = z.array(aprQuestionAnswerSchema).min(1).max(5).parse(value);
+  const answers = z.array(aprQuestionAnswerSchema).max(5).parse(value);
   const seen = new Set<string>();
   let previousIndex = -1;
   for (const pair of answers) {
@@ -405,6 +430,7 @@ export function validateAprRefinement(
   value: unknown,
   expectedTarget: AprTarget,
   expectedAnswers: AprQuestionAnswer[],
+  expectedAdditionalContext: string,
 ): AprRefinement {
   const refinement = aprRefinementSchema.parse(value);
   validateAprTarget(refinement.target);
@@ -422,6 +448,11 @@ export function validateAprRefinement(
   if (JSON.stringify(refinement.answers) !== JSON.stringify(expectedAnswers)) {
     throw new Error(
       "Copilot returned a refinement for different answers. Nothing has been changed.",
+    );
+  }
+  if (refinement.additionalContext !== expectedAdditionalContext) {
+    throw new Error(
+      "Copilot returned a refinement for different additional context. Nothing has been changed.",
     );
   }
   if (refinement.rewrite === expectedTarget.bullet) {

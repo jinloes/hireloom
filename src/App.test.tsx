@@ -92,6 +92,12 @@ describe("resume studio", () => {
     vi.mocked(platform.generateResume).mockResolvedValue(proposal);
     render(<App />);
     fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    expect(
+      screen.queryByText("Analyze accomplishments"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Analyze with APR" }),
+    ).not.toBeInTheDocument();
     const generate = screen.getByRole("button", { name: "Polish my resume" });
     await waitFor(() =>
       expect(
@@ -155,7 +161,7 @@ describe("resume studio", () => {
     );
   });
 
-  it("analyzes one accomplishment, isolates consent, and applies and undoes only its rewrite", async () => {
+  it("guides one highlight, requires consent, and applies and undoes only its suggestion", async () => {
     const original = workspace.resumes[0];
     const originalBullet = original.experience[0].bullets[0];
     const rewrite =
@@ -177,31 +183,38 @@ describe("resume studio", () => {
       }),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
     await waitFor(() =>
       expect(
-        screen.queryByText("Checking the local Copilot CLI…"),
+        screen.queryByText("Loading your studio…"),
       ).not.toBeInTheDocument(),
     );
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
-    );
+    const help = screen.getAllByRole("button", {
+      name: "Help me strengthen this highlight",
+    })[0];
+    expect(help).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(help);
+    expect(help).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("region", { name: "Highlight guidance" }),
+    ).toHaveAttribute("id", help.getAttribute("aria-controls"));
     expect(
       screen.getAllByText(originalBullet, { exact: true }).length,
     ).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/Only this bullet and the role/)).toBeVisible();
+    expect(screen.getByText(/Only this highlight and the role/)).toBeVisible();
 
     const aprConsent = screen.getByRole("checkbox", {
-      name: /Send this selected bullet and role/,
+      name: /Send this highlight and role/,
     });
     const confirm = screen.getByRole("button", {
-      name: "Confirm APR analysis",
+      name: "Send for guidance",
     });
     expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(platform.analyzeAccomplishment).not.toHaveBeenCalled();
     fireEvent.click(aprConsent);
     fireEvent.click(confirm);
 
-    await screen.findByRole("region", { name: "APR analysis" });
+    await screen.findByText("What changed for customers after the redesign?");
     expect(platform.analyzeAccomplishment).toHaveBeenCalledWith(
       {
         resumeId: original.id,
@@ -214,17 +227,20 @@ describe("resume studio", () => {
     );
     expect(aprConsent).not.toBeChecked();
     expect(screen.getByText("missing", { exact: true })).toBeVisible();
+    expect(screen.getByText("What you did")).toBeVisible();
+    expect(screen.getByText("Product or project")).toBeVisible();
+    expect(screen.getByText("Impact")).toBeVisible();
     expect(screen.getByText(/What changed for customers/)).toBeVisible();
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(
       originalBullet,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Content" }));
     fireEvent.change(screen.getByLabelText("Full name"), {
       target: { value: "A changed unsent name" },
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Copilot" }));
-    const apply = screen.getByRole("button", { name: "Apply initial rewrite" });
+    const apply = screen.getByRole("button", {
+      name: "Apply suggested highlight",
+    });
     expect(apply).toBeEnabled();
     fireEvent.click(apply);
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(rewrite);
@@ -237,82 +253,86 @@ describe("resume studio", () => {
     );
   });
 
-  it("keeps a completed APR result visible and stale when switching resumes", async () => {
-    const resumeA = workspace.resumes[0];
-    const resumeB = {
-      ...exampleResume(),
-      id: "resume-b",
-      title: "Resume B",
-      basics: {
-        ...exampleResume().basics,
-        name: "Resume B Candidate",
-      },
-      experience: exampleResume().experience.map((experience, index) => ({
-        ...experience,
-        id: `resume-b-experience-${index}`,
-        bullets:
-          index === 0
-            ? ["Resume B accomplishment that must remain unchanged."]
-            : experience.bullets,
-      })),
-    };
-    workspace = {
-      ...workspace,
-      resumes: [resumeA, resumeB],
-    };
-    vi.mocked(platform.loadWorkspace).mockResolvedValue(workspace);
-    const rewrite = "APR rewrite for resume A.";
+  it("suppresses questions for all-clear guidance and refines from additional context alone", async () => {
+    const original = workspace.resumes[0];
+    const originalBullet = original.experience[0].bullets[0];
     vi.mocked(platform.analyzeAccomplishment).mockImplementation(
       async (target) => ({
         target,
         action: { status: "clear", feedback: "Specific action." },
-        project: { status: "partial", feedback: "Needs more context." },
-        result: { status: "missing", feedback: "Needs supported impact." },
-        rewrite,
-        questions: [],
+        project: { status: "clear", feedback: "Specific project." },
+        result: { status: "clear", feedback: "Supported impact." },
+        questions: ["This backend question must be suppressed."],
+      }),
+    );
+    vi.mocked(platform.refineAccomplishment).mockImplementation(
+      async (target, _questions, answers, additionalContext) => ({
+        target,
+        answers,
+        additionalContext,
+        rewrite:
+          "Led the onboarding redesign for enterprise administrators across the setup flow.",
       }),
     );
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByText("Checking the local Copilot CLI…"),
-      ).not.toBeInTheDocument(),
-    );
+    await screen.findByLabelText("Full name");
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
+      screen.getAllByRole("button", {
+        name: "Help me strengthen this highlight",
+      })[0],
     );
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /Send this selected bullet and role/,
+        name: /Send this highlight and role/,
       }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Confirm APR analysis" }),
-    );
-    await screen.findByRole("region", { name: "APR analysis" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Resume B" }));
-    expect(screen.getByRole("region", { name: "APR analysis" })).toBeVisible();
-    expect(screen.getByText(rewrite)).toBeVisible();
-    expect(screen.getByText(/changed after analysis/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
     expect(
-      screen.getByRole("button", { name: "Apply initial rewrite" }),
-    ).toBeDisabled();
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      "Resume B accomplishment that must remain unchanged.",
+      await screen.findByText(/No follow-up questions are needed/),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("This backend question must be suppressed."),
+    ).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Additional factual context"), {
+      target: {
+        value: "  The product served enterprise administrators.  ",
+      },
+    });
+    const refineConsent = screen.getByRole("checkbox", {
+      name: /Send these details/,
+    });
+    fireEvent.click(refineConsent);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refine with my details" }),
     );
-    expect(screen.getByTestId("resume-preview")).not.toHaveTextContent(rewrite);
-
-    fireEvent.click(screen.getByRole("button", { name: resumeA.title }));
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      resumeA.experience[0].bullets[0],
+    await screen.findByText(
+      "Led the onboarding redesign for enterprise administrators across the setup flow.",
     );
-    expect(screen.getByTestId("resume-preview")).not.toHaveTextContent(rewrite);
+    expect(platform.refineAccomplishment).toHaveBeenCalledWith(
+      expect.objectContaining({ bullet: originalBullet }),
+      ["This backend question must be suppressed."],
+      [],
+      "The product served enterprise administrators.",
+      true,
+    );
+    expect(
+      screen.getByText(
+        "Led the onboarding redesign for enterprise administrators across the setup flow.",
+      ),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Keep current highlight" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Highlight guidance" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      originalBullet,
+    );
   });
 
-  it("marks sent APR target changes stale and preserves content on analysis failure", async () => {
+  it("marks sent highlight changes stale and preserves content on guidance failure", async () => {
     const original = workspace.resumes[0];
     vi.mocked(platform.analyzeAccomplishment).mockImplementation(
       async (target) => ({
@@ -325,52 +345,45 @@ describe("resume studio", () => {
       }),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByText("Checking the local Copilot CLI…"),
-      ).not.toBeInTheDocument(),
-    );
+    await screen.findByLabelText("Full name");
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
+      screen.getAllByRole("button", {
+        name: "Help me strengthen this highlight",
+      })[0],
     );
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /Send this selected bullet and role/,
+        name: /Send this highlight and role/,
       }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Confirm APR analysis" }),
-    );
-    await screen.findByRole("region", { name: "APR analysis" });
+    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
+    await screen.findByText("A changed rewrite.");
 
-    fireEvent.click(screen.getByRole("tab", { name: "Content" }));
-    fireEvent.change(screen.getByLabelText("Job title 1"), {
-      target: { value: "Changed role" },
-    });
-    fireEvent.click(screen.getByRole("tab", { name: "Copilot" }));
-    expect(
-      screen.getByRole("button", { name: "Apply initial rewrite" }),
-    ).toBeDisabled();
-    expect(screen.getByText(/changed after analysis/)).toBeVisible();
-
-    fireEvent.click(
-      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
-    );
     vi.mocked(platform.analyzeAccomplishment).mockRejectedValueOnce(
       new Error("APR service unavailable"),
     );
     const aprConsent = screen.getByRole("checkbox", {
-      name: /Send this selected bullet and role/,
+      name: /Send this highlight and role/,
     });
     fireEvent.click(aprConsent);
     fireEvent.click(
-      screen.getByRole("button", { name: "Confirm APR analysis" }),
+      screen.getByRole("button", { name: "Request fresh guidance" }),
     );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "APR service unavailable",
     );
+    expect(screen.getByText("A changed rewrite.")).toBeVisible();
     expect(aprConsent).not.toBeChecked();
+
+    fireEvent.change(screen.getByLabelText("Job title 1"), {
+      target: { value: "Changed role" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Apply suggested highlight" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/changed after guidance was requested/),
+    ).toBeVisible();
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(
       original.experience[0].bullets[0],
     );
@@ -392,44 +405,45 @@ describe("resume studio", () => {
       }),
     );
     vi.mocked(platform.refineAccomplishment)
-      .mockImplementationOnce(async (target, _questions, answers) => ({
-        target,
-        answers,
-        rewrite:
-          "Led an onboarding redesign that made setup clearer for customers.",
-      }))
-      .mockImplementationOnce(async (target, _questions, answers) => ({
-        target,
-        answers,
-        rewrite:
-          "Led an onboarding redesign that reduced customer setup confusion.",
-      }));
+      .mockImplementationOnce(
+        async (target, _questions, answers, additionalContext) => ({
+          target,
+          answers,
+          additionalContext,
+          rewrite:
+            "Led an onboarding redesign that made setup clearer for customers.",
+        }),
+      )
+      .mockImplementationOnce(
+        async (target, _questions, answers, additionalContext) => ({
+          target,
+          answers,
+          additionalContext,
+          rewrite:
+            "Led an onboarding redesign that reduced customer setup confusion.",
+        }),
+      );
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByText("Checking the local Copilot CLI…"),
-      ).not.toBeInTheDocument(),
-    );
+    await screen.findByLabelText("Full name");
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
+      screen.getAllByRole("button", {
+        name: "Help me strengthen this highlight",
+      })[0],
     );
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /Send this selected bullet and role/,
+        name: /Send this highlight and role/,
       }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Confirm APR analysis" }),
-    );
-    await screen.findByRole("region", { name: "APR analysis" });
+    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
+    await screen.findByLabelText("Answer 1");
 
     const refine = screen.getByRole("button", {
-      name: "Refine rewrite with answers",
+      name: "Refine with my details",
     });
     const refinementConsent = screen.getByRole("checkbox", {
-      name: /Send these nonblank answers/,
+      name: /Send these details/,
     });
     expect(refine).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Answer 1"), {
@@ -440,9 +454,9 @@ describe("resume studio", () => {
     expect(refine).toBeEnabled();
     fireEvent.click(refine);
 
-    const latest = await screen.findByRole("region", {
-      name: "Latest refined rewrite",
-    });
+    await screen.findByText(
+      "Led an onboarding redesign that made setup clearer for customers.",
+    );
     expect(platform.refineAccomplishment).toHaveBeenCalledWith(
       {
         resumeId: original.id,
@@ -453,11 +467,11 @@ describe("resume studio", () => {
       },
       [question, "How did you validate the change?"],
       [{ question, answer: "Setup became clearer for customers." }],
+      "",
       true,
     );
     expect(refinementConsent).not.toBeChecked();
-    expect(latest).toHaveTextContent("made setup clearer");
-    expect(screen.getByText(initialRewrite)).toBeVisible();
+    expect(screen.queryByText(initialRewrite)).not.toBeInTheDocument();
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(
       originalBullet,
     );
@@ -469,21 +483,26 @@ describe("resume studio", () => {
     });
     expect(refinementConsent).not.toBeChecked();
     expect(
-      screen.getByRole("button", { name: "Apply refined rewrite" }),
-    ).toBeDisabled();
-    expect(screen.getByText(/answers changed after refinement/)).toBeVisible();
+      screen.getByText(
+        /answers or additional context changed after refinement/,
+      ),
+    ).toBeVisible();
+    expect(screen.getByText(initialRewrite)).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Apply initial rewrite" }),
+      screen.getByRole("button", { name: "Apply suggested highlight" }),
     ).toBeEnabled();
 
     fireEvent.click(refinementConsent);
     fireEvent.click(refine);
     await waitFor(() =>
-      expect(latest).toHaveTextContent("reduced customer setup confusion"),
+      expect(
+        screen.getByText(
+          "Led an onboarding redesign that reduced customer setup confusion.",
+        ),
+      ).toBeVisible(),
     );
-    expect(latest).not.toHaveTextContent("made setup clearer");
     fireEvent.click(
-      screen.getByRole("button", { name: "Apply refined rewrite" }),
+      screen.getByRole("button", { name: "Apply suggested highlight" }),
     );
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(
       "reduced customer setup confusion",
@@ -511,50 +530,54 @@ describe("resume studio", () => {
       }),
     );
     vi.mocked(platform.refineAccomplishment)
-      .mockImplementationOnce(async (target, _questions, answers) => ({
-        target,
-        answers,
-        rewrite: "Prior refined rewrite.",
-      }))
+      .mockImplementationOnce(
+        async (target, _questions, answers, additionalContext) => ({
+          target,
+          answers,
+          additionalContext,
+          rewrite: "Prior refined rewrite.",
+        }),
+      )
       .mockRejectedValueOnce(new Error("Malformed Copilot response"));
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
-    await waitFor(() =>
-      expect(
-        screen.queryByText("Checking the local Copilot CLI…"),
-      ).not.toBeInTheDocument(),
-    );
+    await screen.findByLabelText("Full name");
     fireEvent.click(
-      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
+      screen.getAllByRole("button", {
+        name: "Help me strengthen this highlight",
+      })[0],
     );
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /Send this selected bullet and role/,
+        name: /Send this highlight and role/,
       }),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Confirm APR analysis" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
     await screen.findByLabelText("Answer 1");
     fireEvent.change(screen.getByLabelText("Answer 1"), {
       target: { value: "A supported result." },
     });
     const consent = screen.getByRole("checkbox", {
-      name: /Send these nonblank answers/,
+      name: /Send these details/,
     });
     const refine = screen.getByRole("button", {
-      name: "Refine rewrite with answers",
+      name: "Refine with my details",
     });
     fireEvent.click(consent);
+    expect(refine).toBeEnabled();
     fireEvent.click(refine);
+    await waitFor(() =>
+      expect(platform.refineAccomplishment).toHaveBeenCalledTimes(1),
+    );
     await screen.findByText("Prior refined rewrite.");
     fireEvent.click(consent);
     fireEvent.click(refine);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Malformed Copilot response",
     );
-    expect(screen.getByRole("region", { name: "APR analysis" })).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Highlight guidance" }),
+    ).toBeVisible();
     expect(screen.getByText("Prior refined rewrite.")).toBeVisible();
     expect(consent).not.toBeChecked();
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(

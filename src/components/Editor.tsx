@@ -12,6 +12,10 @@ import {
   Sparkles,
 } from "lucide-react";
 import type { Education, Experience, Resume } from "../model";
+import {
+  HighlightGuidance,
+  type HighlightGuidanceController,
+} from "./HighlightGuidance";
 
 type FieldProps = {
   label: string;
@@ -237,11 +241,13 @@ export function Editor({
   onChange,
   onAi,
   onExample,
+  highlightGuidance,
 }: {
   resume: Resume;
   onChange: (resume: Resume) => void;
   onAi: () => void;
   onExample: () => void;
+  highlightGuidance: HighlightGuidanceController;
 }) {
   const basics = (key: keyof Resume["basics"], value: string) =>
     onChange({ ...resume, basics: { ...resume.basics, [key]: value } });
@@ -453,6 +459,40 @@ export function Editor({
                   >
                     <Trash2 size={14} />
                   </button>
+                  {text.trim() && (
+                    <>
+                      <button
+                        className="text-button highlight-help-button"
+                        aria-expanded={
+                          highlightGuidance.target?.resumeId === resume.id &&
+                          highlightGuidance.target.experienceId === entry.id &&
+                          highlightGuidance.target.bulletIndex === bulletIndex
+                        }
+                        aria-controls={`highlight-guidance-${index}-${bulletIndex}`}
+                        onClick={() =>
+                          highlightGuidance.onSelect({
+                            resumeId: resume.id,
+                            experienceId: entry.id,
+                            bulletIndex,
+                            role: entry.role,
+                            bullet: text,
+                          })
+                        }
+                      >
+                        <Sparkles size={13} /> Help me strengthen this highlight
+                      </button>
+                      {highlightGuidance.target?.resumeId === resume.id &&
+                        highlightGuidance.target.experienceId === entry.id &&
+                        highlightGuidance.target.bulletIndex ===
+                          bulletIndex && (
+                          <HighlightGuidance
+                            controller={highlightGuidance}
+                            currentHighlight={text}
+                            regionId={`highlight-guidance-${index}-${bulletIndex}`}
+                          />
+                        )}
+                    </>
+                  )}
                 </div>
               ))}
               <button

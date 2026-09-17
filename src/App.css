@@ -846,6 +846,10 @@ button {
   top: -6px;
   right: -3px;
 }
+.highlight-help-button {
+  margin-top: 8px;
+  font-size: 9px;
+}
 .add-inline {
   font-size: 10px;
 }
@@ -1428,108 +1432,72 @@ button {
   margin-top: 16px;
   font-size: 10px;
 }
-.apr-section {
-  border-top: 1px solid var(--line);
-  margin-top: 27px;
-  padding-top: 23px;
+.highlight-guidance {
+  border: 1px solid #d8e4c9;
+  border-radius: 8px;
+  background: #fbfdf7;
+  margin-top: 10px;
+  padding: 13px;
 }
-.apr-section .card-heading {
+.highlight-guidance-heading {
+  display: flex;
   align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
-.apr-section h2 {
-  font-family: var(--serif);
-  font-size: 20px;
-  font-weight: 400;
+.highlight-guidance-heading h3 {
   color: #37513a;
-  margin: 5px 0;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 500;
+  margin: 3px 0 10px;
 }
-.accomplishment-groups {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-.accomplishment-group {
-  border: 1px solid #e4eadb;
-  border-radius: 7px;
-  background: #fbfcf8;
-  padding: 12px;
-}
-.accomplishment-group h3,
-.apr-request-card h3,
-.apr-analysis h3 {
-  font-size: 10px;
-  color: #547240;
-  margin: 0 0 8px;
-  text-transform: capitalize;
-}
-.accomplishment-group ul {
-  display: grid;
-  gap: 12px;
+.highlight-guidance blockquote {
+  border-left: 2px solid #a7bc8c;
   margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.accomplishment-group li {
-  border-top: 1px solid #edf0e8;
-  padding-top: 10px;
-}
-.accomplishment-group li:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-.accomplishment-group p,
-.apr-request-card blockquote,
-.apr-analysis p,
-.apr-analysis li {
+  padding-left: 10px;
   color: #5e7352;
   font-size: 10px;
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
-.accomplishment-group p {
-  margin: 0 0 8px;
-}
-.accomplishment-group .button {
-  font-size: 9px;
-}
-.accomplishment-group .button[aria-pressed="true"] {
-  border-color: #87a768;
-  background: #edf3e2;
-}
-.apr-request-card,
-.apr-analysis {
-  border: 1px solid #d8e4c9;
-  border-radius: 8px;
-  background: #fbfdf7;
-  margin-top: 16px;
-  padding: 15px;
-}
-.apr-request-card blockquote {
-  border-left: 2px solid #a7bc8c;
-  margin: 0;
-  padding-left: 10px;
-}
-.privacy-note.apr-disclosure {
+.privacy-note.highlight-disclosure {
   align-items: flex-start;
   font-size: 9px;
   line-height: 1.9;
+  padding: 13px 0 11px;
 }
-.apr-analysis > .fine-print {
+.highlight-guidance > .generate-button,
+.highlight-refinement-request > .generate-button {
+  width: 100%;
+  margin-top: 11px;
+}
+.highlight-analysis > .fine-print {
   margin: 10px 0 14px;
 }
-.apr-dimension {
+.highlight-dimension {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 4px 8px;
   border-top: 1px solid #e7ecdf;
   padding: 11px 0;
 }
-.apr-dimension h3 {
+.highlight-dimension h4,
+.highlight-questions h4,
+.highlight-comparison h4 {
+  color: #547240;
+  font-size: 10px;
+}
+.highlight-dimension h4 {
   margin: 0;
 }
-.apr-dimension p {
+.highlight-dimension p {
   grid-column: 1 / -1;
   margin: 0;
+  color: #5e7352;
+  font-size: 10px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
 .apr-status {
   border-radius: 999px;
@@ -1550,13 +1518,13 @@ button {
   color: #985434;
   background: #f7e5db;
 }
-.apr-rewrite {
+.highlight-questions {
   border-top: 1px solid #e7ecdf;
-  margin-top: 2px;
+  margin-top: 12px;
   padding-top: 12px;
 }
-.apr-questions {
-  margin-top: 12px;
+.highlight-questions > h4 {
+  margin: 0 0 5px;
 }
 .apr-answer {
   border-top: 1px solid #e7ecdf;
@@ -1573,29 +1541,53 @@ button {
   min-height: 76px;
   resize: vertical;
 }
-.apr-refinement-request {
+.highlight-refinement-request {
   border-top: 1px solid #d8e4c9;
   margin-top: 4px;
   padding-top: 12px;
 }
-.apr-refinement-request .generate-button {
-  width: 100%;
-}
-.apr-refinement {
-  border: 1px solid #cbdcae;
-  border-radius: 7px;
-  background: #f3f8e9;
-  margin-top: 14px;
-  padding: 12px;
-}
-.apr-refinement > p {
-  margin: 0 0 10px;
-}
-.apr-analysis > .button,
-.apr-refinement > .button {
-  width: 100%;
-  margin-top: 14px;
+.highlight-guidance-status {
+  color: #65745a;
   font-size: 10px;
+  line-height: 1.7;
+  margin: 11px 0 0;
+}
+.highlight-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 9px;
+  margin-top: 13px;
+}
+.highlight-comparison > div {
+  border: 1px solid #dfe7d6;
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px;
+  min-width: 0;
+}
+.highlight-comparison > div:last-child {
+  border-color: #b9cda2;
+  background: #f3f8e9;
+}
+.highlight-comparison h4 {
+  margin: 0 0 7px;
+}
+.highlight-comparison p {
+  color: #4f6248;
+  font-size: 10px;
+  line-height: 1.75;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.highlight-guidance-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.highlight-guidance-actions .button {
+  flex: 1;
+  font-size: 9px;
 }
 .inline-error {
   font-size: 10px;
@@ -2022,6 +2014,13 @@ button {
   }
   .document-title input {
     width: 210px;
+  }
+  .highlight-comparison {
+    grid-template-columns: 1fr;
+  }
+  .highlight-guidance-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 @media (max-width: 980px) {

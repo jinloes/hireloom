@@ -87,29 +87,42 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
   await expect(page.getByTestId("resume-preview")).toContainText(
     "Mar 2021 – Sep 2025",
   );
-  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
-  const aprActions = page.getByRole("button", { name: "Analyze with APR" });
-  await expect(aprActions.first()).toBeVisible();
-  await aprActions.first().click();
+  const guidanceActions = page.getByRole("button", {
+    name: "Help me strengthen this highlight",
+  });
+  await expect(guidanceActions.first()).toBeVisible();
+  await guidanceActions.first().click();
   await expect(
-    page.getByText("Only this bullet and the role", { exact: false }),
+    page.getByText("Only this highlight and the role", { exact: false }),
   ).toBeVisible();
   await expect(
     page.getByRole("checkbox", {
-      name: /Send this selected bullet and role/,
+      name: /Send this highlight and role/,
     }),
   ).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "Confirm APR analysis" }),
+    page.getByRole("button", { name: "Send for guidance" }),
   ).toBeDisabled();
   await expect(
-    page.getByText("APR analysis is available only in the desktop app."),
+    page.getByText(
+      "Highlight guidance is available only in the desktop app. You can keep editing locally.",
+    ),
   ).toBeVisible();
+  const highlight = page.getByRole("textbox", {
+    name: "Highlight 1.1",
+    exact: true,
+  });
+  await highlight.fill(
+    "Kept editing this highlight locally in the browser preview.",
+  );
+  await expect(highlight).toHaveValue(
+    "Kept editing this highlight locally in the browser preview.",
+  );
   await expect(
-    page.getByRole("button", { name: "Refine rewrite with answers" }),
+    page.getByText("Suggested highlight", { exact: true }),
   ).toHaveCount(0);
   await expect(page.getByTestId("resume-preview")).toContainText(
-    "Led the end-to-end redesign of a customer onboarding experience",
+    "Kept editing this highlight locally in the browser preview.",
   );
   await page.getByRole("tab", { name: "Design", exact: true }).click();
   await page

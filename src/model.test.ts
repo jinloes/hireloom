@@ -9,6 +9,7 @@ import {
   initialWorkspace,
   jobKeywords,
   MAX_WORKSPACE_BYTES,
+  normalizeAprAdditionalContext,
   normalizeAprAnswers,
   parseWorkspace,
   resumeReadiness,
@@ -201,15 +202,19 @@ describe("AI proposals", () => {
         { question: questions[2], answer: "With usability tests." },
       ]);
       expect(validateAprQuestionAnswers(questions, answers)).toEqual(answers);
+      const additionalContext = normalizeAprAdditionalContext(
+        "  The affected product was the customer onboarding flow.  ",
+      );
       const refinement = {
         target,
         answers,
+        additionalContext,
         rewrite:
           "Led an onboarding redesign validated through usability testing.",
       };
-      expect(validateAprRefinement(refinement, target, answers)).toEqual(
-        refinement,
-      );
+      expect(
+        validateAprRefinement(refinement, target, answers, additionalContext),
+      ).toEqual(refinement);
     });
 
     it("rejects invalid APR answer binding, limits, and refinement data", () => {
@@ -253,13 +258,14 @@ describe("AI proposals", () => {
           { question: "First?", answer: "x".repeat(2_001) },
         ]),
       ).toThrow();
-      expect(() => validateAprQuestionAnswers(questions, [])).toThrow();
+      expect(validateAprQuestionAnswers(questions, [])).toEqual([]);
       const answers = [{ question: "First?", answer: "one" }];
       expect(() =>
         validateAprRefinement(
-          { target, answers, rewrite: target.bullet },
+          { target, answers, additionalContext: "", rewrite: target.bullet },
           target,
           answers,
+          "",
         ),
       ).toThrow("changed");
       expect(() =>
@@ -267,10 +273,12 @@ describe("AI proposals", () => {
           {
             target: { ...target, bulletIndex: 1 },
             answers,
+            additionalContext: "",
             rewrite: "Changed.",
           },
           target,
           answers,
+          "",
         ),
       ).toThrow("different accomplishment");
       expect(() =>
@@ -278,19 +286,49 @@ describe("AI proposals", () => {
           {
             target,
             answers: [{ question: "First?", answer: "other" }],
+            additionalContext: "",
             rewrite: "Changed.",
           },
           target,
           answers,
+          "",
         ),
       ).toThrow("different answers");
       expect(() =>
         validateAprRefinement(
-          { target, answers, rewrite: "Changed.", extra: true },
+          {
+            target,
+            answers,
+            additionalContext: "Different context.",
+            rewrite: "Changed.",
+          },
           target,
           answers,
+          "Expected context.",
+        ),
+      ).toThrow("different additional context");
+      expect(() =>
+        validateAprRefinement(
+          {
+            target,
+            answers,
+            additionalContext: "",
+            rewrite: "Changed.",
+            extra: true,
+          },
+          target,
+          answers,
+          "",
         ),
       ).toThrow();
+      expect(() =>
+        validateAprRefinement(
+          { target, answers: [], additionalContext: "", rewrite: "Changed." },
+          target,
+          [],
+          "",
+        ),
+      ).toThrow("answer or additional context");
     });
   });
 
