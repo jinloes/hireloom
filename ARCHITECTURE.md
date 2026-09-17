@@ -181,6 +181,16 @@ model, empty tool list, isolated Copilot profile, JSON event transport, and
 process limits. Rust attaches the unchanged target, submitted normalized
 answers, and context after parsing; the platform adapter revalidates all echoes.
 
+The initial analysis rewrite and required detail-guided rewrite share one
+prompt-level quality invariant: produce one concise, resume-ready bullet that
+begins with a strong action verb, naturally combines Action with Product or
+project, includes Result only when supplied facts support it, preserves
+concrete product, audience, technical, and scope details, avoids APR labels and
+first-person phrasing, and does not invent or overstate facts, scope, ownership,
+outcomes, or metrics. This style contract is prompt-directed; strict parsing
+continues to enforce response shape, size, target/detail binding, and whether a
+refinement changed the original bullet, not subjective prose quality.
+
 The inline comparison exposes one current suggestion: a fresh latest refinement
 supersedes the initial rewrite. Target changes stale both candidates; answer or
 context changes stale only a prior refinement, allowing the initial suggestion

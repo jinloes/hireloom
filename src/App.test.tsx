@@ -253,6 +253,52 @@ describe("resume studio", () => {
     );
   });
 
+  it("moves highlights within an experience and closes guidance before reindexing", async () => {
+    const original = workspace.resumes[0];
+    const firstHighlight = original.experience[0].bullets[0];
+    const secondHighlight = original.experience[0].bullets[1];
+
+    render(<App />);
+    await screen.findByLabelText("Full name");
+
+    expect(
+      screen.getByRole("button", { name: "Move highlight 1.1 up" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Move highlight 1.3 down" }),
+    ).toBeDisabled();
+
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: "Help me strengthen this highlight",
+      })[0],
+    );
+    expect(
+      screen.getByRole("region", { name: "Highlight guidance" }),
+    ).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move highlight 1.1 down" }),
+    );
+
+    expect(
+      screen.queryByRole("region", { name: "Highlight guidance" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Highlight 1.1")).toHaveValue(secondHighlight);
+    expect(screen.getByLabelText("Highlight 1.2")).toHaveValue(firstHighlight);
+    expect(
+      screen.getByRole("button", { name: "Move highlight 1.1 up" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Move highlight 1.2 up" }),
+    ).toBeEnabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move highlight 1.2 up" }),
+    );
+    expect(screen.getByLabelText("Highlight 1.1")).toHaveValue(firstHighlight);
+    expect(screen.getByLabelText("Highlight 1.2")).toHaveValue(secondHighlight);
+  });
+
   it("suppresses questions for all-clear guidance and refines from additional context alone", async () => {
     const original = workspace.resumes[0];
     const originalBullet = original.experience[0].bullets[0];

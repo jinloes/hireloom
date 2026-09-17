@@ -90,6 +90,19 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
   const guidanceActions = page.getByRole("button", {
     name: "Help me strengthen this highlight",
   });
+  const firstHighlight = page.getByLabel("Highlight 1.1", { exact: true });
+  const secondHighlight = page.getByLabel("Highlight 1.2", { exact: true });
+  const firstHighlightText = await firstHighlight.inputValue();
+  const secondHighlightText = await secondHighlight.inputValue();
+  await expect(
+    page.getByRole("button", { name: "Move highlight 1.1 up" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Move highlight 1.1 down" }).click();
+  await expect(firstHighlight).toHaveValue(secondHighlightText);
+  await expect(secondHighlight).toHaveValue(firstHighlightText);
+  await expect(
+    page.getByRole("button", { name: "Move highlight 1.3 down" }),
+  ).toBeDisabled();
   await expect(guidanceActions.first()).toBeVisible();
   await guidanceActions.first().click();
   await expect(

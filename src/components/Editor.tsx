@@ -431,6 +431,35 @@ export function Editor({
               </div>
               {entry.bullets.map((text, bulletIndex) => (
                 <div className="bullet-editor" key={bulletIndex}>
+                  <EntryControls
+                    label={`highlight ${index + 1}.${bulletIndex + 1}`}
+                    index={bulletIndex}
+                    length={entry.bullets.length}
+                    onMove={(direction) => {
+                      if (
+                        highlightGuidance.target?.resumeId === resume.id &&
+                        highlightGuidance.target.experienceId === entry.id
+                      ) {
+                        highlightGuidance.onKeep();
+                      }
+                      experience(entry.id, {
+                        bullets: move(entry.bullets, bulletIndex, direction),
+                      });
+                    }}
+                    onRemove={() => {
+                      if (
+                        highlightGuidance.target?.resumeId === resume.id &&
+                        highlightGuidance.target.experienceId === entry.id
+                      ) {
+                        highlightGuidance.onKeep();
+                      }
+                      experience(entry.id, {
+                        bullets: entry.bullets.filter(
+                          (_, i) => i !== bulletIndex,
+                        ),
+                      });
+                    }}
+                  />
                   <Field
                     label={`Highlight ${index + 1}.${bulletIndex + 1}`}
                     value={text}
@@ -446,19 +475,6 @@ export function Editor({
                       })
                     }
                   />
-                  <button
-                    className="icon-button danger"
-                    aria-label={`Remove highlight ${index + 1}.${bulletIndex + 1}`}
-                    onClick={() =>
-                      experience(entry.id, {
-                        bullets: entry.bullets.filter(
-                          (_, i) => i !== bulletIndex,
-                        ),
-                      })
-                    }
-                  >
-                    <Trash2 size={14} />
-                  </button>
                   {text.trim() && (
                     <>
                       <button

@@ -841,10 +841,14 @@ button {
 .bullet-editor {
   position: relative;
 }
-.bullet-editor > .icon-button {
+.bullet-editor > .entry-controls {
   position: absolute;
   top: -6px;
   right: -3px;
+  z-index: 1;
+}
+.bullet-editor > .field > label {
+  padding-right: 84px;
 }
 .highlight-help-button {
   margin-top: 8px;

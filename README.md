@@ -26,8 +26,8 @@ connect to Copilot. It does not read your desktop workspace.
 
 - Multiple resume documents with rename, duplicate, and confirmed deletion.
 - Personal details including portfolio, LinkedIn, and GitHub URLs; summary;
-  reorderable experience with month/year dates and current-role support;
-  education; and skills.
+  reorderable experience and highlights with month/year dates and current-role
+  support; education; and skills.
 - A live preview, Editorial and Modern layouts, and three accent colors.
 - Local autosaving with visible failures, retries, and recovery backup export.
 - A4, selectable-text PDFs with embedded fonts and automatic page overflow.
@@ -96,6 +96,12 @@ supported impact, even when no follow-up questions are needed. Answers and
 additional context are optional: blanks remain local, nonblank values are
 trimmed and sent only after a second single-use consent, and you can keep the
 current highlight or use the initial suggestion without providing more detail.
+Both the initial and detail-guided suggestions target the same concise,
+resume-ready APR-style bullet: a strong action-led statement that naturally
+combines what you did with the product or project, preserves supplied concrete
+details, and includes an impact only when the facts you submitted support it.
+The instruction is fact-bound rather than a guarantee of prose quality, so
+review every suggestion and never accept invented or overstated claims.
 
 The inline comparison presents only one current suggestion. A fresh
 detail-guided refinement replaces the initial suggestion in that comparison.
