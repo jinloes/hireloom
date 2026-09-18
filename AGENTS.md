@@ -56,7 +56,8 @@ Read these documents before changing code:
 | Formatting-sensitive changes                                           | `npm run format:check` and, for Rust, `cargo fmt --manifest-path src-tauri/Cargo.toml --check` |
 
 Automated tests must not authenticate with Copilot or make live Copilot
-requests. Native Copilot tests use fake executables.
+requests. Native Copilot tests use SDK configuration/event fixtures and fake
+executables for direct status/login subprocess behavior.
 
 ## Documentation maintenance contract
 

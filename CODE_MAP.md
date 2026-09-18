@@ -6,45 +6,45 @@ current when files or responsibilities change.
 
 ## Runtime entry points
 
-| Location                | Responsibility                                                                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `index.html`            | Browser/Tauri webview HTML shell and application metadata                                                                                              |
-| `src/main.tsx`          | React root and Strict Mode entry point                                                                                                                 |
-| `src/App.tsx`           | Top-level studio orchestration, resume library, import/export, whole-resume and inline highlight guidance/refinement state, dialogs, and notifications |
-| `src-tauri/src/main.rs` | Native binary entry point; delegates to `hireloom_lib::run`                                                                                            |
-| `src-tauri/src/lib.rs`  | Tauri application builder, commands, native validation, local persistence, export, and Copilot subprocess boundary                                     |
+| Location                | Responsibility                                                                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.html`            | Browser/Tauri webview HTML shell and application metadata                                                                                                      |
+| `src/main.tsx`          | React root and Strict Mode entry point                                                                                                                         |
+| `src/App.tsx`           | Top-level studio orchestration, resume library, import/export, whole-resume and feedback-refinable inline highlight guidance state, dialogs, and notifications |
+| `src-tauri/src/main.rs` | Native binary entry point; delegates to `hireloom_lib::run`                                                                                                    |
+| `src-tauri/src/lib.rs`  | Tauri application builder, commands, native validation, local persistence, export, and Copilot SDK/CLI boundary                                                |
 
 ## Frontend
 
-| Location                               | Responsibility                                                                                                                                                                                                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/model.ts`                         | Zod persistence, whole-resume AI and transient APR option/question/idea/refinement schemas, UTF-8 and binding validators, domain types, limits, factories, import validation, exact-target atomic one/two-bullet application, readiness, keyword matching, and filenames |
-| `src/useWorkspace.ts`                  | Initial load, serialized debounced autosave, dirty/error state, retries, browser unload protection, and native close protection                                                                                                                                          |
-| `src/platform.ts`                      | Runtime adapter: validated Tauri IPC on desktop, including separate factual/idea answer and complete APR refinement echo checks, and isolated `localStorage`/downloads in browser preview                                                                                |
-| `src/components/Editor.tsx`            | Accessible content fields, experience/education/highlight reordering, skills editing, and inline highlight guidance placement                                                                                                                                            |
-| `src/components/HighlightGuidance.tsx` | Bounded per-highlight disclosure, consent, factual dimensions, separate factual and idea answers, refreshed options, accessible explicit selection, and apply or keep controls                                                                                           |
-| `src/components/CopilotPanel.tsx`      | CLI status/login controls, per-request consent, job text, local keyword overlap, and whole-resume proposal review                                                                                                                                                        |
-| `src/components/ResumePreview.tsx`     | Continuous on-screen resume preview                                                                                                                                                                                                                                      |
-| `src/components/StylePanel.tsx`        | Template and accent selection                                                                                                                                                                                                                                            |
-| `src/ResumeDocument.tsx`               | Lazy-loaded React PDF document, embedded font registration, pagination, and PDF blob creation                                                                                                                                                                            |
-| `src/App.css`                          | Application shell, editor, preview, responsive behavior, focus, dialogs, and reduced-motion styling                                                                                                                                                                      |
-| `src/vite-env.d.ts`                    | Vite client type declarations                                                                                                                                                                                                                                            |
+| Location                               | Responsibility                                                                                                                                                                                                                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/model.ts`                         | Zod persistence, whole-resume AI and transient APR option schemas, UTF-8 and target-binding validators, domain types, limits, factories, import validation, exact-target atomic one/two-bullet application, readiness, keyword matching, and filenames |
+| `src/useWorkspace.ts`                  | Initial load, serialized debounced autosave, dirty/error state, retries, browser unload protection, and native close protection                                                                                                                        |
+| `src/platform.ts`                      | Runtime adapter: validated Tauri IPC on desktop plus isolated `localStorage` and downloads in browser preview                                                                                                                                          |
+| `src/components/Editor.tsx`            | Accessible content fields, top/end experience insertion, experience/education/highlight reordering, skills editing, and inline highlight guidance placement                                                                                            |
+| `src/components/HighlightGuidance.tsx` | Bounded per-highlight disclosure, per-request consent, factual dimensions, direct rewrite options, freeform refinement feedback, accessible selection, and apply or keep controls                                                                      |
+| `src/components/CopilotPanel.tsx`      | CLI status/login controls, per-request consent, job text, local keyword overlap, and whole-resume proposal review                                                                                                                                      |
+| `src/components/ResumePreview.tsx`     | Continuous on-screen resume preview                                                                                                                                                                                                                    |
+| `src/components/StylePanel.tsx`        | Template and accent selection                                                                                                                                                                                                                          |
+| `src/ResumeDocument.tsx`               | Lazy-loaded React PDF document, embedded font registration, pagination, and PDF blob creation                                                                                                                                                          |
+| `src/App.css`                          | Application shell, editor, preview, responsive behavior, focus, dialogs, and reduced-motion styling                                                                                                                                                    |
+| `src/vite-env.d.ts`                    | Vite client type declarations                                                                                                                                                                                                                          |
 
 ## Native backend
 
 `src-tauri/src/lib.rs` is intentionally one native module in the current MVP.
 Its internal areas are:
 
-| Area                | Key symbols                                                                                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Shared contract     | `Resume`, `Workspace`, `AiProposal`, APR target/analysis/question-answer/refinement DTOs, nested DTOs, enums, and size/count constants                             |
-| Tauri commands      | `load_workspace`, `save_workspace`, `export_document`, `copilot_status`, `copilot_login`, `generate_resume`, `analyze_accomplishment`, `refine_accomplishment`     |
-| Persistence         | `workspace_path`, `load_workspace_from_path`, `serialize_valid_workspace`, `write_atomic`                                                                          |
-| Validation          | `validate_workspace`, `validate_resume`, `validate_ai_proposal`, export and text validators                                                                        |
-| Copilot isolation   | `COPILOT_MODEL`, `CopilotPaths`, `copilot_paths`, `ensure_copilot_config`, `parse_jsonc`, `configure_copilot_command`, CLI arguments                               |
-| AI request/response | Whole-resume, APR analysis, and answer-refinement prompt builders/parsers, JSON event extraction, local target/pair binding, and the shared isolated prompt runner |
-| Process control     | `run_process`, capped output readers, timeout and error summarization                                                                                              |
-| Application setup   | `run`, managed state, plugin registration, command registration, and exit routing                                                                                  |
+| Area                | Key symbols                                                                                                                                                                               |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared contract     | `Resume`, `Workspace`, `AiProposal`, APR target/analysis DTOs, nested DTOs, enums, and size/count constants                                                                               |
+| Tauri commands      | `load_workspace`, `save_workspace`, `export_document`, `copilot_status`, `copilot_login`, `generate_resume`, `analyze_accomplishment`, `refine_accomplishment`                            |
+| Persistence         | `workspace_path`, `load_workspace_from_path`, `serialize_valid_workspace`, `write_atomic`                                                                                                 |
+| Validation          | `validate_workspace`, `validate_resume`, `validate_ai_proposal`, export and text validators                                                                                               |
+| Copilot isolation   | `GENERATE_RESUME_MODEL`, `INLINE_APR_MODEL`, `CopilotPaths`, `copilot_paths`, `ensure_copilot_config`, `parse_jsonc`, SDK client/session builders, and status/login command configuration |
+| AI request/response | Luna whole-resume plus Gemini APR analysis/refinement prompts and parsers, SDK session lifecycle, typed event validation, local target binding, and the shared no-fallback request runner |
+| Process control     | Direct CLI status/login `run_process`, capped output readers, timeout, and error summarization                                                                                            |
+| Application setup   | `run`, managed state, plugin registration, command registration, and exit routing                                                                                                         |
 
 Related native configuration:
 
@@ -68,13 +68,13 @@ Related native configuration:
 
 ## Tests
 
-| Location                              | Coverage                                                                                                                                                                                                                               |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/model.test.ts`                   | Workspace validation, whole-resume and APR option/idea/refinement contracts, UTF-8 limits, binding and atomic one/two-bullet application invariants, readiness, keywords, and filenames                                                |
-| `src/App.test.tsx`                    | Load/save failures, serialized saves, highlight reordering, separate AI consent, multiple-option and idea/refinement flows, explicit selection, staleness, split cap/order, failure preservation, exact apply/keep/undo, and AI errors |
-| `src/test/setup.ts`                   | Vitest DOM setup and cleanup                                                                                                                                                                                                           |
-| `src-tauri/src/lib.rs` `tests` module | Native validation, atomic writes, isolated Copilot config, whole-resume/APR/refinement prompt redaction and parsing, subprocess flags, timeout, and errors                                                                             |
-| `e2e/studio.spec.ts`                  | Browser editing and highlight reordering, persistence, desktop-only option/idea guidance negative controls, import/export, ATS-relevant PDF headings/read order/content, document management, corrupt data, and pagination             |
+| Location                              | Coverage                                                                                                                                                                                                                                       |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/model.test.ts`                   | Workspace validation, whole-resume and APR option contracts, UTF-8 limits, binding and atomic one/two-bullet application invariants, readiness, keywords, and filenames                                                                        |
+| `src/App.test.tsx`                    | Load/save failures, serialized saves, highlight reordering, per-request AI consent, multiple-option and feedback refinement flows, staleness, failure preservation, exact apply/keep/undo, and AI errors                                       |
+| `src/test/setup.ts`                   | Vitest DOM setup and cleanup                                                                                                                                                                                                                   |
+| `src-tauri/src/lib.rs` `tests` module | Native validation, atomic writes, isolated Copilot config, whole-resume/APR analysis and refinement prompt boundaries, locked-down SDK configuration, typed response validation, final-response bounds, and direct subprocess isolation/errors |
+| `e2e/studio.spec.ts`                  | Browser editing and highlight reordering, persistence, desktop-only guidance negative controls, import/export, ATS-relevant PDF headings/read order/content, document management, corrupt data, and pagination                                 |
 
 ## Tooling and automation
 

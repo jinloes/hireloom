@@ -8,7 +8,7 @@ refine your wording, and export a clean PDF without a watermark.
 
 ## Start the desktop app
 
-Prerequisites: Node.js 22.12+ (24 LTS recommended), npm, Rust stable, and the
+Prerequisites: Node.js 22.12+ (24 LTS recommended), npm, Rust 1.94+, and the
 [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/).
 macOS needs Xcode Command Line Tools; Windows needs the MSVC build tools and
 WebView2; Linux needs WebKitGTK 4.1 and the other listed system packages.
@@ -26,17 +26,17 @@ connect to Copilot. It does not read your desktop workspace.
 
 - Multiple resume documents with rename, duplicate, and confirmed deletion.
 - Personal details including portfolio, LinkedIn, and GitHub URLs; summary;
-  reorderable experience and highlights with month/year dates and current-role
-  support; education; and skills.
+  experience entries that can be added at the top or end, reorderable
+  experience and highlights with month/year dates and current-role support;
+  education; and skills.
 - A live preview, Editorial and Modern layouts, and three accent colors.
 - Local autosaving with visible failures, retries, and recovery backup export.
 - A4, selectable-text PDFs with embedded fonts and automatic page overflow.
 - JSON workspace backups and validated, non-destructive imports.
 - Job-description keyword overlap and a transparent resume-essentials checklist.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
-  review, multiple fact-bound highlight options, separate ideas to verify,
-  detail-guided refinement, stale-result protection, and one-step undo until
-  the next edit.
+  review, multiple fact-bound highlight options, stale-result protection, and
+  one-step undo until the next edit.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details or click **try a fictional example**. The example
@@ -60,19 +60,24 @@ account entitlement are separate: detecting the executable does not verify login
 
 Hireloom uses a separate, app-specific Copilot configuration directory, so sign
 in through Hireloom even if you already use Copilot for development. It does not
-store an API key in the frontend or bundle the CLI. The app invokes the CLI from
-Rust without a shell, sends the prompt through stdin, disables model tools,
-custom instructions, hooks, built-in MCP servers, and remote session sharing,
-and uses a neutral working directory instead of your projects. The subprocess
-retains your real OS home only so the CLI can use the system credential store;
-Copilot, GitHub CLI, cache, temporary, and working files remain redirected to
-Hireloom-owned directories. Whole-resume and APR requests are pinned to
-`gpt-5.6-luna` for consistent behavior. If that model is unavailable to the
-signed-in account or installed CLI, the request fails visibly instead of
-silently switching models. Responses use the CLI's JSON event stream so quoted
-feedback remains valid structured data. Hireloom also accepts the CLI's
-commented JSON configuration format while preserving existing settings and
-enforcing its isolation controls.
+store an API key in the frontend or bundle the CLI. Rust uses the official
+`github-copilot-sdk` with an explicit installed CLI path; the SDK starts the CLI
+without a shell and exchanges typed JSON-RPC messages. Generation sessions run
+in the SDK's empty mode with no tools, custom instructions, hooks, skills,
+built-in MCP servers, managed settings, persistence, or remote session sharing,
+and use a neutral working directory instead of your projects. Permission
+requests are denied. The subprocess retains your real OS home only so the CLI
+can use the system credential store; Copilot, GitHub CLI, cache, temporary, and
+working files remain redirected to Hireloom-owned directories. Status and login
+continue to invoke the installed CLI directly. Whole-resume requests are pinned to
+`gpt-5.6-luna`, while inline highlight analysis is pinned to
+`gemini-3.8-flash`. If the required model is unavailable to the
+signed-in account or installed CLI, the request fails visibly without retrying
+another model. The SDK waits for the final typed assistant message, accepts
+phased and unphased final answers, rejects commentary and tool requests, and
+enforces the 128 KB final-answer limit before feature-specific validation.
+Hireloom also accepts the CLI's commented JSON configuration format while
+preserving existing settings and enforcing its isolation controls.
 
 Add real experience or skills, optionally paste a job description, and check the
 consent box for each request. Copilot proposes a summary and experience
@@ -89,26 +94,33 @@ text are sent; resume and experience IDs and the highlight position remain
 local.
 
 Guidance labels the factual dimensions as **What you did**, **Product or
-project**, and **Impact**. Each is marked clear, partial, or missing. When all
-three are clear, no factual-gap questions are shown. Otherwise, Copilot may ask
-up to five concise questions about missing or partial details. A visually
-separate **Ideas to verify** group contains up to five confirmation questions
-for potentially useful directions that are not yet supported. Those ideas
-remain questions and cannot enter a rewrite as facts unless you explicitly
-confirm them in their separate answer fields.
+project**, and **Impact**. Each is marked clear, partial, or missing. The same
+request immediately returns fact-bound rewrite options; there are no required
+follow-up questions.
 
-You can also add freeform factual context, such as the product area, audience,
-constraints, or supported impact. Factual answers, confirmed idea answers, and
-additional context are optional: blanks remain local, nonblank values are
-trimmed and sent only after a second single-use consent. A successful refinement
-refreshes the APR feedback, factual questions, ideas, and complete option set.
-
-Guidance returns no truthful rewrite options or two to three fixed strategies:
+Guidance always requests one to three fixed rewrite strategies:
 **Concise · unified** and **Detail-forward · unified** each replace the current
 highlight with one bullet; **Split · two highlights** is available only when
 the supplied facts support two nonredundant bullets. No option is selected
 automatically. Review the static strategy labels, tradeoffs, and every claim,
 then explicitly select an option before **Apply selected option** is enabled.
+Gemini is instructed that improving structure, clarity, specificity, and
+action-led wording without changing the underlying claims is a valid truthful
+rewrite, even when no impact is stated. It preserves supported technologies and
+context while making concise options materially shorter, detail-forward options
+specific without filler, and split options factually distinct rather than
+repetitive. One useful option is accepted when multiple distinct strategies are
+not supported.
+
+After reviewing the options, use **Tell Gemini what to change** to provide
+freeform direction such as emphasizing technical leadership, making the
+language punchier, or preserving more implementation detail. Refinement is a
+separate, explicitly consented request that sends the original role and
+highlight, the displayed options, and your feedback. The original highlight
+remains the factual boundary: feedback can change wording and emphasis but
+cannot authorize invented claims. A successful refinement replaces the option
+set and clears its selection; a failed refinement preserves the existing
+options, selection, and feedback.
 Applying revalidates the exact resume, experience, role, highlight position,
 and original text. A unified option replaces only that highlight; a split
 atomically inserts its two bullets in order and is refused if it would exceed
@@ -116,13 +128,9 @@ the 30-highlight limit. **Keep current highlight** closes without editing, and
 successful apply uses the existing exact one-step AI undo.
 
 A changed role, highlight, position, experience, active resume, or highlight
-reordering makes the result stale and blocks apply. Editing either answer group
-or additional context clears refinement consent and invalidates a prior
-refinement and its selection, without making a fresh initial analysis stale.
-CLI, timeout,
-malformed-output, and other request failures keep the relevant guidance,
-answers, context, prior options, and resume unchanged while showing an
-error.
+reordering makes the result stale and blocks apply. CLI, timeout,
+malformed-output, and other request failures keep the current guidance,
+selection, and resume unchanged while showing an error.
 
 In the browser preview, inline help remains discoverable but clearly reports
 that guidance is desktop-only. Its consent and send controls are disabled while
@@ -140,14 +148,11 @@ the highlight remains locally editable.
   browser data deletes that browser's workspace; export a backup first.
 - Whole-resume AI requests send the summary, work history, education, skills,
   professional headline, and job description to GitHub Copilot. Inline
-  highlight guidance requests send only the selected highlight and its role; a
-  refinement additionally sends only the nonblank displayed factual
-  question/answer pairs, separately confirmed idea question/answer pairs, and
-  freeform additional context you provide. Dedicated name, email,
-  phone, personal location, website, GitHub, diagnostics/initial rewrite, other
-  resume fields, and local correlation IDs are excluded. **Anything you type
-  into free text can still contain identifying information**; review and redact
-  it yourself.
+  highlight guidance requests send only the selected highlight and its role.
+  Dedicated name, email, phone, personal location, website, GitHub,
+  diagnostics/initial rewrite, other resume fields, and local correlation IDs
+  are excluded. **Anything you type into free text can still contain
+  identifying information**; review and redact it yourself.
 - Copilot authentication and session state use the app's `copilot` directory.
   The CLI may retain prompts and responses there, and GitHub processes the
   request according to your account's policies. Local-first does not mean
@@ -195,10 +200,9 @@ checks ATS-relevant PDF compatibility: standard section headings, complete
 selectable text, and single-column extraction order. These checks do not claim
 compatibility with every ATS or provide a hiring score. Frontend unit tests
 cover schemas, keyword boundaries, save failures, and AI consent/review/undo,
-including inline targeting, answer/context binding, context-only refinement,
-multiple-option selection, split application, separate idea confirmation,
-refinement refresh, and staleness. Native tests use fake CLI
-processes, including guidance/refinement
+including inline targeting, direct multiple-option selection, split
+application, and staleness. Native tests use fake CLI processes, including
+guidance
 response and isolation coverage; tests never authenticate or spend Copilot
 usage.
 

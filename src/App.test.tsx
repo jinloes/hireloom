@@ -3,8 +3,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   exampleResume,
   type AprAnalysis,
-  type AprQuestionAnswer,
-  type AprRefinement,
   type AprTarget,
   type Workspace,
 } from "./model";
@@ -55,24 +53,7 @@ function aprResult(
         bullets: ["Led a focused onboarding redesign through user research."],
       },
     ],
-    questions: [],
-    ideasToVerify: [],
     ...overrides,
-  };
-}
-
-function refinementResult(
-  target: AprTarget,
-  answers: AprQuestionAnswer[],
-  ideaAnswers: AprQuestionAnswer[],
-  additionalContext: string,
-  overrides: Partial<Omit<AprAnalysis, "target">> = {},
-): AprRefinement {
-  return {
-    ...aprResult(target, overrides),
-    answers,
-    ideaAnswers,
-    additionalContext,
   };
 }
 
@@ -210,6 +191,8 @@ describe("resume studio", () => {
     const originalBullet = original.experience[0].bullets[0];
     const rewrite =
       "Led an onboarding redesign using research, prototypes, and usability testing.";
+    const refinedRewrite =
+      "Spearheaded a cross-functional onboarding redesign through research, prototyping, and usability testing.";
     vi.mocked(platform.analyzeAccomplishment).mockImplementation(
       async (target) =>
         aprResult(target, {
@@ -231,8 +214,12 @@ describe("resume studio", () => {
               ],
             },
           ],
-          questions: ["What changed for customers after the redesign?"],
-          ideasToVerify: ["Did onboarding completion improve?"],
+        }),
+    );
+    vi.mocked(platform.refineAccomplishment).mockImplementation(
+      async ({ target }) =>
+        aprResult(target, {
+          options: [{ id: "detail-forward", bullets: [refinedRewrite] }],
         }),
     );
     render(<App />);
@@ -253,7 +240,9 @@ describe("resume studio", () => {
     expect(
       screen.getAllByText(originalBullet, { exact: true }).length,
     ).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText(/Only this highlight and the role/)).toBeVisible();
+    expect(
+      screen.getByText(/Initial guidance sends only this highlight/),
+    ).toBeVisible();
 
     const aprConsent = screen.getByRole("checkbox", {
       name: /Send this highlight and role/,
@@ -267,7 +256,7 @@ describe("resume studio", () => {
     fireEvent.click(aprConsent);
     fireEvent.click(confirm);
 
-    await screen.findByText("What changed for customers after the redesign?");
+    await screen.findByText(rewrite);
     expect(platform.analyzeAccomplishment).toHaveBeenCalledWith(
       {
         resumeId: original.id,
@@ -283,9 +272,44 @@ describe("resume studio", () => {
     expect(screen.getByText("What you did")).toBeVisible();
     expect(screen.getByText("Product or project")).toBeVisible();
     expect(screen.getByText("Impact")).toBeVisible();
-    expect(screen.getByText(/What changed for customers/)).toBeVisible();
-    expect(screen.getByText("Ideas to verify")).toBeVisible();
-    expect(screen.getByText(/unsupported until you confirm/)).toBeVisible();
+    const feedback = screen.getByLabelText("Tell Gemini what to change");
+    const refine = screen.getByRole("button", {
+      name: "Refine rewrite options",
+    });
+    expect(refine).toBeDisabled();
+    fireEvent.change(feedback, {
+      target: { value: "Emphasize cross-functional leadership." },
+    });
+    expect(refine).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Send this feedback, the original highlight and role/,
+      }),
+    );
+    fireEvent.click(refine);
+    await screen.findByText(refinedRewrite);
+    expect(platform.refineAccomplishment).toHaveBeenCalledWith(
+      {
+        target: {
+          resumeId: original.id,
+          experienceId: original.experience[0].id,
+          bulletIndex: 0,
+          role: original.experience[0].role,
+          bullet: originalBullet,
+        },
+        options: [
+          { id: "concise", bullets: [rewrite] },
+          {
+            id: "detail-forward",
+            bullets: [
+              "Led an onboarding redesign through research, prototyping, and usability testing.",
+            ],
+          },
+        ],
+        feedback: "Emphasize cross-functional leadership.",
+      },
+      true,
+    );
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(
       originalBullet,
     );
@@ -297,10 +321,14 @@ describe("resume studio", () => {
       name: "Apply selected option",
     });
     expect(apply).toBeDisabled();
-    fireEvent.click(screen.getByRole("radio", { name: /Concise · unified/ }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Detail-forward · unified/ }),
+    );
     expect(apply).toBeEnabled();
     fireEvent.click(apply);
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(rewrite);
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      refinedRewrite,
+    );
     expect(screen.getByTestId("resume-preview")).toHaveTextContent(
       original.experience[0].bullets[1],
     );
@@ -356,102 +384,25 @@ describe("resume studio", () => {
     expect(screen.getByLabelText("Highlight 1.2")).toHaveValue(secondHighlight);
   });
 
-  it("suppresses questions for all-clear guidance and refines from additional context alone", async () => {
-    const original = workspace.resumes[0];
-    const originalBullet = original.experience[0].bullets[0];
-    vi.mocked(platform.analyzeAccomplishment).mockImplementation(
-      async (target) =>
-        aprResult(target, {
-          action: { status: "clear", feedback: "Specific action." },
-          project: { status: "clear", feedback: "Specific project." },
-          result: { status: "clear", feedback: "Supported impact." },
-          questions: ["This backend question must be suppressed."],
-        }),
-    );
-    vi.mocked(platform.refineAccomplishment).mockImplementation(
-      async (
-        target,
-        _questions,
-        answers,
-        _ideas,
-        ideaAnswers,
-        additionalContext,
-      ) =>
-        refinementResult(target, answers, ideaAnswers, additionalContext, {
-          options: [
-            {
-              id: "concise",
-              bullets: [
-                "Led the onboarding redesign for enterprise administrators across the setup flow.",
-              ],
-            },
-            {
-              id: "detail-forward",
-              bullets: [
-                "Led an enterprise administrator onboarding redesign across the full setup flow.",
-              ],
-            },
-          ],
-        }),
-    );
-
+  it("adds experience entries to the top or end of the list", async () => {
     render(<App />);
     await screen.findByLabelText("Full name");
+
     fireEvent.click(
-      screen.getAllByRole("button", {
-        name: "Help me strengthen this highlight",
-      })[0],
+      screen.getByRole("button", { name: "Add experience to top" }),
     );
+    expect(screen.getByLabelText("Job title 1")).toHaveValue("");
+    expect(screen.getByLabelText("Job title 2")).toHaveValue(
+      "Senior Product Designer",
+    );
+    expect(screen.getByLabelText("Job title 3")).toHaveValue(
+      "Product Designer",
+    );
+
     fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /Send this highlight and role/,
-      }),
+      screen.getByRole("button", { name: "Add experience to end" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
-    expect(
-      await screen.findByText(/No follow-up questions are needed/),
-    ).toBeVisible();
-    expect(
-      screen.queryByText("This backend question must be suppressed."),
-    ).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Additional factual context"), {
-      target: {
-        value: "  The product served enterprise administrators.  ",
-      },
-    });
-    const refineConsent = screen.getByRole("checkbox", {
-      name: /Send these details/,
-    });
-    fireEvent.click(refineConsent);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Refine with my details" }),
-    );
-    await screen.findByText(
-      "Led the onboarding redesign for enterprise administrators across the setup flow.",
-    );
-    expect(platform.refineAccomplishment).toHaveBeenCalledWith(
-      expect.objectContaining({ bullet: originalBullet }),
-      ["This backend question must be suppressed."],
-      [],
-      [],
-      [],
-      "The product served enterprise administrators.",
-      true,
-    );
-    expect(
-      screen.getByText(
-        "Led the onboarding redesign for enterprise administrators across the setup flow.",
-      ),
-    ).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Keep current highlight" }),
-    );
-    expect(
-      screen.queryByRole("region", { name: "Highlight guidance" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      originalBullet,
-    );
+    expect(screen.getByLabelText("Job title 4")).toHaveValue("");
   });
 
   it("marks sent highlight changes stale and preserves content on guidance failure", async () => {
@@ -483,6 +434,31 @@ describe("resume studio", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
     await screen.findByText("A changed rewrite.");
     fireEvent.click(screen.getByRole("radio", { name: /Concise · unified/ }));
+
+    vi.mocked(platform.refineAccomplishment).mockRejectedValueOnce(
+      new Error("Refinement unavailable"),
+    );
+    fireEvent.change(screen.getByLabelText("Tell Gemini what to change"), {
+      target: { value: "Make it more direct." },
+    });
+    const refineConsent = screen.getByRole("checkbox", {
+      name: /Send this feedback, the original highlight and role/,
+    });
+    fireEvent.click(refineConsent);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Refine rewrite options" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Refinement unavailable",
+    );
+    expect(screen.getByText("A changed rewrite.")).toBeVisible();
+    expect(
+      screen.getByRole("radio", { name: /Concise · unified/ }),
+    ).toBeChecked();
+    expect(screen.getByLabelText("Tell Gemini what to change")).toHaveValue(
+      "Make it more direct.",
+    );
+    expect(refineConsent).not.toBeChecked();
 
     vi.mocked(platform.analyzeAccomplishment).mockRejectedValueOnce(
       new Error("APR service unavailable"),
@@ -568,288 +544,6 @@ describe("resume studio", () => {
       screen.getByRole("region", { name: "Highlight guidance" }),
     ).toBeVisible();
   }, 15_000);
-
-  it("refines from trimmed answers with separate consent, review, staleness, apply, and undo", async () => {
-    const original = workspace.resumes[0];
-    const originalBullet = original.experience[0].bullets[0];
-    const initialRewrite = "Led a focused onboarding redesign.";
-    const question = "What changed for customers?";
-    const idea = "Did setup completion improve?";
-    vi.mocked(platform.analyzeAccomplishment).mockImplementation(
-      async (target) =>
-        aprResult(target, {
-          action: { status: "clear", feedback: "Specific action." },
-          project: { status: "clear", feedback: "Specific project." },
-          result: { status: "missing", feedback: "Needs a supported result." },
-          options: [
-            { id: "concise", bullets: [initialRewrite] },
-            {
-              id: "detail-forward",
-              bullets: ["Led a focused customer onboarding redesign."],
-            },
-          ],
-          questions: [question, "How did you validate the change?"],
-          ideasToVerify: [idea],
-        }),
-    );
-    vi.mocked(platform.refineAccomplishment)
-      .mockImplementationOnce(
-        async (
-          target,
-          _questions,
-          answers,
-          _ideas,
-          ideaAnswers,
-          additionalContext,
-        ) =>
-          refinementResult(target, answers, ideaAnswers, additionalContext, {
-            options: [
-              {
-                id: "concise",
-                bullets: [
-                  "Led an onboarding redesign that made setup clearer for customers.",
-                ],
-              },
-              {
-                id: "detail-forward",
-                bullets: [
-                  "Led a customer onboarding redesign that made setup instructions clearer.",
-                ],
-              },
-            ],
-            questions: [question],
-            ideasToVerify: [idea],
-          }),
-      )
-      .mockImplementationOnce(
-        async (
-          target,
-          _questions,
-          answers,
-          _ideas,
-          ideaAnswers,
-          additionalContext,
-        ) =>
-          refinementResult(target, answers, ideaAnswers, additionalContext, {
-            options: [
-              {
-                id: "concise",
-                bullets: [
-                  "Led an onboarding redesign that reduced customer setup confusion.",
-                ],
-              },
-              {
-                id: "detail-forward",
-                bullets: [
-                  "Led a customer onboarding redesign that reduced setup confusion.",
-                ],
-              },
-              {
-                id: "split",
-                bullets: [
-                  "Led a customer onboarding redesign.",
-                  "Reduced customer setup confusion with clearer guidance.",
-                ],
-              },
-            ],
-            questions: [],
-            ideasToVerify: [],
-          }),
-      );
-
-    render(<App />);
-    await screen.findByLabelText("Full name");
-    fireEvent.click(
-      screen.getAllByRole("button", {
-        name: "Help me strengthen this highlight",
-      })[0],
-    );
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /Send this highlight and role/,
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
-    await screen.findByLabelText("Answer 1");
-
-    const refine = screen.getByRole("button", {
-      name: "Refine with my details",
-    });
-    const refinementConsent = screen.getByRole("checkbox", {
-      name: /Send these details/,
-    });
-    expect(refine).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Answer 1"), {
-      target: { value: "  Setup became clearer for customers.  " },
-    });
-    fireEvent.change(screen.getByLabelText("Idea answer 1"), {
-      target: { value: "  Yes, completion improved by 4%.  " },
-    });
-    expect(refine).toBeDisabled();
-    fireEvent.click(refinementConsent);
-    expect(refine).toBeEnabled();
-    fireEvent.click(refine);
-
-    await screen.findByText(
-      "Led an onboarding redesign that made setup clearer for customers.",
-    );
-    expect(platform.refineAccomplishment).toHaveBeenCalledWith(
-      {
-        resumeId: original.id,
-        experienceId: original.experience[0].id,
-        bulletIndex: 0,
-        role: original.experience[0].role,
-        bullet: originalBullet,
-      },
-      [question, "How did you validate the change?"],
-      [{ question, answer: "Setup became clearer for customers." }],
-      [idea],
-      [{ question: idea, answer: "Yes, completion improved by 4%." }],
-      "",
-      true,
-    );
-    expect(refinementConsent).not.toBeChecked();
-    expect(screen.queryByText(initialRewrite)).not.toBeInTheDocument();
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      originalBullet,
-    );
-
-    fireEvent.click(refinementConsent);
-    expect(refinementConsent).toBeChecked();
-    fireEvent.change(screen.getByLabelText("Answer 1"), {
-      target: { value: "A different supported answer." },
-    });
-    expect(refinementConsent).not.toBeChecked();
-    expect(
-      screen.getByText(
-        /answers or additional context changed after refinement/,
-      ),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        "Led an onboarding redesign that made setup clearer for customers.",
-      ),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Apply selected option" }),
-    ).toBeDisabled();
-
-    fireEvent.click(refinementConsent);
-    fireEvent.click(refine);
-    await waitFor(() =>
-      expect(
-        screen.getByText(
-          "Led an onboarding redesign that reduced customer setup confusion.",
-        ),
-      ).toBeVisible(),
-    );
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Split · two highlights/ }),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Apply selected option" }),
-    );
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      "Led a customer onboarding redesign.",
-    );
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      "Reduced customer setup confusion with clearer guidance.",
-    );
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      original.experience[0].bullets[1],
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Undo AI changes" }));
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      originalBullet,
-    );
-  });
-
-  it("preserves review and the prior refinement when another refinement fails", async () => {
-    const original = workspace.resumes[0];
-    const question = "What changed?";
-    vi.mocked(platform.analyzeAccomplishment).mockImplementation(
-      async (target) =>
-        aprResult(target, {
-          action: { status: "clear", feedback: "Specific action." },
-          project: { status: "partial", feedback: "Needs context." },
-          result: { status: "missing", feedback: "Needs impact." },
-          options: [
-            { id: "concise", bullets: ["Initial rewrite."] },
-            { id: "detail-forward", bullets: ["Initial detailed rewrite."] },
-          ],
-          questions: [question],
-        }),
-    );
-    vi.mocked(platform.refineAccomplishment)
-      .mockImplementationOnce(
-        async (
-          target,
-          _questions,
-          answers,
-          _ideas,
-          ideaAnswers,
-          additionalContext,
-        ) =>
-          refinementResult(target, answers, ideaAnswers, additionalContext, {
-            options: [
-              { id: "concise", bullets: ["Prior refined rewrite."] },
-              {
-                id: "detail-forward",
-                bullets: ["Prior detailed refined rewrite."],
-              },
-            ],
-            questions: [question],
-          }),
-      )
-      .mockRejectedValueOnce(new Error("Malformed Copilot response"));
-
-    render(<App />);
-    await screen.findByLabelText("Full name");
-    fireEvent.click(
-      screen.getAllByRole("button", {
-        name: "Help me strengthen this highlight",
-      })[0],
-    );
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /Send this highlight and role/,
-      }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Send for guidance" }));
-    await screen.findByLabelText("Answer 1");
-    fireEvent.change(screen.getByLabelText("Answer 1"), {
-      target: { value: "A supported result." },
-    });
-    const consent = screen.getByRole("checkbox", {
-      name: /Send these details/,
-    });
-    const refine = screen.getByRole("button", {
-      name: "Refine with my details",
-    });
-    fireEvent.click(consent);
-    expect(refine).toBeEnabled();
-    fireEvent.click(refine);
-    await waitFor(() =>
-      expect(platform.refineAccomplishment).toHaveBeenCalledTimes(1),
-    );
-    await screen.findByText("Prior refined rewrite.");
-    fireEvent.change(screen.getByLabelText("Answer 1"), {
-      target: { value: "Another supported result." },
-    });
-    fireEvent.click(consent);
-    fireEvent.click(refine);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Malformed Copilot response",
-    );
-    expect(
-      screen.getByRole("region", { name: "Highlight guidance" }),
-    ).toBeVisible();
-    expect(screen.getByText("Prior refined rewrite.")).toBeVisible();
-    expect(consent).not.toBeChecked();
-    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
-      original.experience[0].bullets[0],
-    );
-  });
 
   it("finishes the newest save after an older write is delayed", async () => {
     let finishFirstSave: (() => void) | undefined;

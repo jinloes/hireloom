@@ -12,10 +12,12 @@ const aprId = utf8String(100).refine((value) => value.trim().length > 0, {
   message: "ID must not be blank.",
 });
 const aprShortText = utf8String(500);
-const aprText = utf8String(2_000);
-const aprNonemptyText = aprText.refine((value) => value.trim().length > 0, {
-  message: "Text must not be blank.",
-});
+const aprNonemptyText = utf8String(2_000).refine(
+  (value) => value.trim().length > 0,
+  {
+    message: "Text must not be blank.",
+  },
+);
 
 export const experienceSchema = z.strictObject({
   id,
@@ -142,52 +144,31 @@ export const aprOptionSchema = z
     }
   });
 
-const aprCoreSchema = z
-  .strictObject({
-    target: aprTargetSchema,
-    action: aprDimensionSchema,
-    project: aprDimensionSchema,
-    result: aprDimensionSchema,
-    options: z.array(aprOptionSchema).max(3),
-    questions: z.array(aprNonemptyText).max(5),
-    ideasToVerify: z.array(aprNonemptyText).max(5),
-  })
-  .superRefine((result, ctx) => {
-    if (result.options.length === 1) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "APR options must be empty or contain at least two strategies.",
-        path: ["options"],
-      });
-    }
+const aprOptionsSchema = z
+  .array(aprOptionSchema)
+  .min(1)
+  .max(3)
+  .superRefine((options, ctx) => {
     const canonicalOrder = ["concise", "detail-forward", "split"];
     const optionSequences = new Set<string>();
-    result.options.forEach((option, index) => {
-      if (option.id !== canonicalOrder[index]) {
+    let previousRank = -1;
+    options.forEach((option, index) => {
+      const rank = canonicalOrder.indexOf(option.id);
+      if (rank <= previousRank) {
         ctx.addIssue({
           code: "custom",
           message:
             "APR options must be unique and in canonical strategy order.",
-          path: ["options", index, "id"],
+          path: [index, "id"],
         });
       }
-      if (
-        option.bullets.length === 1 &&
-        option.bullets[0] === result.target.bullet
-      ) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Every APR option must change the original highlight.",
-          path: ["options", index, "bullets"],
-        });
-      }
+      previousRank = rank;
       const sequence = JSON.stringify(option.bullets);
       if (optionSequences.has(sequence)) {
         ctx.addIssue({
           code: "custom",
           message: "APR option bullet sequences must be distinct.",
-          path: ["options", index, "bullets"],
+          path: [index, "bullets"],
         });
       }
       optionSequences.add(sequence);
@@ -198,24 +179,30 @@ const aprCoreSchema = z
         ctx.addIssue({
           code: "custom",
           message: "Split APR bullets must be nonredundant.",
-          path: ["options", index, "bullets"],
+          path: [index, "bullets"],
         });
       }
     });
-    const allQuestions = [...result.questions, ...result.ideasToVerify];
-    if (new Set(allQuestions).size !== allQuestions.length) {
-      ctx.addIssue({
-        code: "custom",
-        message: "APR questions and ideas must be unique across both groups.",
-        path: ["questions"],
-      });
-    }
-    result.ideasToVerify.forEach((idea, index) => {
-      if (!idea.trim().endsWith("?")) {
+  });
+
+const aprCoreSchema = z
+  .strictObject({
+    target: aprTargetSchema,
+    action: aprDimensionSchema,
+    project: aprDimensionSchema,
+    result: aprDimensionSchema,
+    options: aprOptionsSchema,
+  })
+  .superRefine((result, ctx) => {
+    result.options.forEach((option, index) => {
+      if (
+        option.bullets.length === 1 &&
+        option.bullets[0] === result.target.bullet
+      ) {
         ctx.addIssue({
           code: "custom",
-          message: "Ideas to verify must be confirmation questions.",
-          path: ["ideasToVerify", index],
+          message: "Every APR option must change the original highlight.",
+          path: ["options", index, "bullets"],
         });
       }
     });
@@ -223,56 +210,25 @@ const aprCoreSchema = z
 
 export const aprAnalysisSchema = aprCoreSchema;
 
-export const aprQuestionAnswerSchema = z.strictObject({
-  question: aprNonemptyText,
-  answer: aprNonemptyText,
-});
-
 export const aprRefinementSchema = z
   .strictObject({
-    ...aprCoreSchema.shape,
-    answers: z.array(aprQuestionAnswerSchema).max(5),
-    ideaAnswers: z.array(aprQuestionAnswerSchema).max(5),
-    additionalContext: aprText,
+    target: aprTargetSchema,
+    options: aprOptionsSchema,
+    feedback: aprNonemptyText,
   })
-  .superRefine((refinement, ctx) => {
-    if (
-      refinement.answers.length === 0 &&
-      refinement.ideaAnswers.length === 0 &&
-      refinement.additionalContext.trim().length === 0
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "Provide at least one factual answer, confirmed idea answer, or additional context.",
-        path: ["additionalContext"],
-      });
-    }
-    if (refinement.additionalContext !== refinement.additionalContext.trim()) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Additional context must be trimmed.",
-        path: ["additionalContext"],
-      });
-    }
-    const core = aprCoreSchema.safeParse({
-      target: refinement.target,
-      action: refinement.action,
-      project: refinement.project,
-      result: refinement.result,
-      options: refinement.options,
-      questions: refinement.questions,
-      ideasToVerify: refinement.ideasToVerify,
-    });
-    if (!core.success) {
-      for (const issue of core.error.issues) {
+  .superRefine((result, ctx) => {
+    result.options.forEach((option, index) => {
+      if (
+        option.bullets.length === 1 &&
+        option.bullets[0] === result.target.bullet
+      ) {
         ctx.addIssue({
           code: "custom",
-          message: issue.message,
-          path: issue.path,
+          message: "Every APR option must change the original highlight.",
+          path: ["options", index, "bullets"],
         });
       }
-    }
+    });
   });
 
 export type Resume = z.infer<typeof resumeSchema>;
@@ -285,7 +241,6 @@ export type AprDimension = z.infer<typeof aprDimensionSchema>;
 export type AprOptionId = z.infer<typeof aprOptionIdSchema>;
 export type AprOption = z.infer<typeof aprOptionSchema>;
 export type AprAnalysis = z.infer<typeof aprAnalysisSchema>;
-export type AprQuestionAnswer = z.infer<typeof aprQuestionAnswerSchema>;
 export type AprRefinement = z.infer<typeof aprRefinementSchema>;
 
 export const MAX_WORKSPACE_BYTES = 2 * 1024 * 1024;
@@ -486,97 +441,6 @@ export function validateAprAnalysis(
     );
   }
   return analysis;
-}
-
-export function normalizeAprAnswers(
-  questions: string[],
-  answers: string[],
-): AprQuestionAnswer[] {
-  const validQuestions = z.array(aprNonemptyText).max(5).parse(questions);
-  if (new Set(validQuestions).size !== validQuestions.length) {
-    throw new Error("APR questions must be unique.");
-  }
-  if (answers.length !== validQuestions.length) {
-    throw new Error("APR answers must match the current question list.");
-  }
-  return validQuestions.flatMap((question, index) => {
-    const answer = aprText.parse(answers[index]).trim();
-    return answer ? [{ question, answer }] : [];
-  });
-}
-
-export function normalizeAprAdditionalContext(value: string): string {
-  return aprText.parse(value).trim();
-}
-
-export function validateAprQuestionAnswers(
-  questions: string[],
-  value: unknown,
-): AprQuestionAnswer[] {
-  const validQuestions = z.array(aprNonemptyText).max(5).parse(questions);
-  if (new Set(validQuestions).size !== validQuestions.length) {
-    throw new Error("APR questions must be unique.");
-  }
-  const answers = z.array(aprQuestionAnswerSchema).max(5).parse(value);
-  const seen = new Set<string>();
-  let previousIndex = -1;
-  for (const pair of answers) {
-    if (pair.answer !== pair.answer.trim()) {
-      throw new Error("APR answers must be trimmed.");
-    }
-    const index = validQuestions.indexOf(pair.question);
-    if (index < 0) throw new Error("APR answer contains an unknown question.");
-    if (seen.has(pair.question)) {
-      throw new Error("APR answer questions must not be duplicated.");
-    }
-    if (index <= previousIndex) {
-      throw new Error("APR answers must follow question display order.");
-    }
-    seen.add(pair.question);
-    previousIndex = index;
-  }
-  return answers;
-}
-
-export function validateAprRefinement(
-  value: unknown,
-  expectedTarget: AprTarget,
-  expectedAnswers: AprQuestionAnswer[],
-  expectedIdeaAnswers: AprQuestionAnswer[],
-  expectedAdditionalContext: string,
-): AprRefinement {
-  const refinement = aprRefinementSchema.parse(value);
-  validateAprTarget(refinement.target);
-  if (
-    refinement.target.resumeId !== expectedTarget.resumeId ||
-    refinement.target.experienceId !== expectedTarget.experienceId ||
-    refinement.target.bulletIndex !== expectedTarget.bulletIndex ||
-    refinement.target.role !== expectedTarget.role ||
-    refinement.target.bullet !== expectedTarget.bullet
-  ) {
-    throw new Error(
-      "Copilot returned a refinement for a different accomplishment. Nothing has been changed.",
-    );
-  }
-  if (JSON.stringify(refinement.answers) !== JSON.stringify(expectedAnswers)) {
-    throw new Error(
-      "Copilot returned a refinement for different answers. Nothing has been changed.",
-    );
-  }
-  if (
-    JSON.stringify(refinement.ideaAnswers) !==
-    JSON.stringify(expectedIdeaAnswers)
-  ) {
-    throw new Error(
-      "Copilot returned a refinement for different confirmed ideas. Nothing has been changed.",
-    );
-  }
-  if (refinement.additionalContext !== expectedAdditionalContext) {
-    throw new Error(
-      "Copilot returned a refinement for different additional context. Nothing has been changed.",
-    );
-  }
-  return refinement;
 }
 
 export function applyAprOption(

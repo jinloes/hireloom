@@ -1,20 +1,17 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   type AprAnalysis,
-  type AprQuestionAnswer,
   type AprRefinement,
   type AprTarget,
   type AiProposal,
   type Resume,
   type Workspace,
   MAX_WORKSPACE_BYTES,
-  normalizeAprAdditionalContext,
   parseWorkspace,
   validateAprAnalysis,
-  validateAprQuestionAnswers,
-  validateAprRefinement,
   validateAprTarget,
   validateProposal,
+  aprRefinementSchema,
   workspaceSchema,
 } from "./model";
 
@@ -123,47 +120,22 @@ export async function analyzeAccomplishment(
 }
 
 export async function refineAccomplishment(
-  target: AprTarget,
-  questions: string[],
-  answers: AprQuestionAnswer[],
-  ideasToVerify: string[],
-  ideaAnswers: AprQuestionAnswer[],
-  additionalContext: string,
+  refinement: AprRefinement,
   consent: boolean,
-): Promise<AprRefinement> {
+): Promise<AprAnalysis> {
   if (!desktop) throw new Error("APR refinement requires the desktop app.");
   if (!consent)
-    throw new Error("Confirm that you want to send these details to Copilot.");
-  const validTarget = validateAprTarget(target);
-  const validAnswers = validateAprQuestionAnswers(questions, answers);
-  const validIdeaAnswers = validateAprQuestionAnswers(
-    ideasToVerify,
-    ideaAnswers,
-  );
-  const validAdditionalContext =
-    normalizeAprAdditionalContext(additionalContext);
-  if (
-    !validAnswers.length &&
-    !validIdeaAnswers.length &&
-    !validAdditionalContext
-  ) {
     throw new Error(
-      "Provide at least one factual answer, confirmed idea answer, or additional context before refining.",
+      "Confirm that you want to send this feedback to GitHub Copilot.",
     );
-  }
-  return validateAprRefinement(
+  const valid = aprRefinementSchema.parse(refinement);
+  return validateAprAnalysis(
     await invoke<unknown>("refine_accomplishment", {
-      target: validTarget,
-      questions,
-      answers: validAnswers,
-      ideasToVerify,
-      ideaAnswers: validIdeaAnswers,
-      additionalContext: validAdditionalContext,
+      ...valid.target,
+      options: valid.options,
+      feedback: valid.feedback,
       consent,
     }),
-    validTarget,
-    validAnswers,
-    validIdeaAnswers,
-    validAdditionalContext,
+    valid.target,
   );
 }

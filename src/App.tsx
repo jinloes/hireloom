@@ -31,14 +31,10 @@ import {
   errorMessage,
   exampleResume,
   MAX_WORKSPACE_BYTES,
-  normalizeAprAdditionalContext,
-  normalizeAprAnswers,
   parseWorkspace,
   resumeReadiness,
   type AprAnalysis,
   type AprOptionId,
-  type AprQuestionAnswer,
-  type AprRefinement,
   type AprTarget,
   type AiProposal,
   type Resume,
@@ -65,13 +61,6 @@ type Tab = "content" | "copilot" | "style";
 type Notice = { kind: "success" | "error"; text: string };
 type Suggestion = { value: AiProposal; source: string };
 type AprSuggestion = { value: AprAnalysis; source: AprTarget };
-type AprRefinementSuggestion = {
-  value: AprRefinement;
-  source: AprTarget;
-  answers: AprQuestionAnswer[];
-  ideaAnswers: AprQuestionAnswer[];
-  additionalContext: string;
-};
 
 function App() {
   const {
@@ -99,14 +88,10 @@ function App() {
   const [aprSuggestion, setAprSuggestion] = useState<AprSuggestion | null>(
     null,
   );
-  const [aprAnswers, setAprAnswers] = useState<string[]>([]);
-  const [aprIdeaAnswers, setAprIdeaAnswers] = useState<string[]>([]);
-  const [aprAdditionalContext, setAprAdditionalContext] = useState("");
   const [aprSelectedOption, setAprSelectedOption] =
     useState<AprOptionId | null>(null);
-  const [aprRefinementConsent, setAprRefinementConsent] = useState(false);
-  const [aprRefinement, setAprRefinement] =
-    useState<AprRefinementSuggestion | null>(null);
+  const [aprFeedback, setAprFeedback] = useState("");
+  const [aprRefineConsent, setAprRefineConsent] = useState(false);
   const [undo, setUndo] = useState<Resume | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showTools, setShowTools] = useState(false);
@@ -125,12 +110,9 @@ function App() {
     setAprTarget(null);
     setAprConsent(false);
     setAprSuggestion(null);
-    setAprAnswers([]);
-    setAprIdeaAnswers([]);
-    setAprAdditionalContext("");
     setAprSelectedOption(null);
-    setAprRefinementConsent(false);
-    setAprRefinement(null);
+    setAprFeedback("");
+    setAprRefineConsent(false);
   }
 
   const report = (error: unknown) =>
@@ -169,7 +151,6 @@ function App() {
     setSuggestion(null);
     setConsent(false);
     setAprConsent(false);
-    setAprRefinementConsent(false);
     setUndo(null);
   }
 
@@ -358,12 +339,45 @@ function App() {
     setAprTarget(target);
     setAprConsent(false);
     setAprSuggestion(null);
-    setAprAnswers([]);
-    setAprIdeaAnswers([]);
-    setAprAdditionalContext("");
     setAprSelectedOption(null);
-    setAprRefinementConsent(false);
-    setAprRefinement(null);
+    setAprFeedback("");
+    setAprRefineConsent(false);
+  }
+
+  async function refineApr() {
+    if (!aprSuggestion) return;
+    if (!aprSourceIsCurrent(aprSuggestion.source)) {
+      setAprRefineConsent(false);
+      report(
+        new Error(
+          "This accomplishment changed. Request fresh guidance before refining.",
+        ),
+      );
+      return;
+    }
+    setBusy("refine");
+    try {
+      const value = await refineAccomplishment(
+        {
+          target: aprSuggestion.source,
+          options: aprSuggestion.value.options,
+          feedback: aprFeedback.trim(),
+        },
+        aprRefineConsent,
+      );
+      setAprSuggestion({ value, source: aprSuggestion.source });
+      setAprSelectedOption(null);
+      setAprFeedback("");
+      setNotice({
+        kind: "success",
+        text: "Your refined rewrite options are ready. Your resume has not been changed.",
+      });
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(null);
+      setAprRefineConsent(false);
+    }
   }
 
   async function analyzeApr() {
@@ -381,12 +395,9 @@ function App() {
     try {
       const value = await analyzeAccomplishment(aprTarget, aprConsent);
       setAprSuggestion({ value, source: aprTarget });
-      setAprAnswers(value.questions.map(() => ""));
-      setAprIdeaAnswers(value.ideasToVerify.map(() => ""));
-      setAprAdditionalContext("");
       setAprSelectedOption(null);
-      setAprRefinementConsent(false);
-      setAprRefinement(null);
+      setAprFeedback("");
+      setAprRefineConsent(false);
       setNotice({
         kind: "success",
         text: "Your highlight guidance is ready to review. Your resume has not been changed.",
@@ -411,118 +422,6 @@ function App() {
     );
   }
 
-  function currentAprAnswers(): AprQuestionAnswer[] {
-    if (!aprSuggestion) return [];
-    return normalizeAprAnswers(aprSuggestion.value.questions, aprAnswers);
-  }
-
-  function currentAprIdeaAnswers(): AprQuestionAnswer[] {
-    if (!aprSuggestion) return [];
-    return normalizeAprAnswers(
-      aprSuggestion.value.ideasToVerify,
-      aprIdeaAnswers,
-    );
-  }
-
-  function changeAprAnswer(index: number, value: string) {
-    setAprAnswers((current) =>
-      current.map((answer, answerIndex) =>
-        answerIndex === index ? value : answer,
-      ),
-    );
-    setAprRefinementConsent(false);
-    if (aprRefinement) setAprSelectedOption(null);
-  }
-
-  function changeAprIdeaAnswer(index: number, value: string) {
-    setAprIdeaAnswers((current) =>
-      current.map((answer, answerIndex) =>
-        answerIndex === index ? value : answer,
-      ),
-    );
-    setAprRefinementConsent(false);
-    if (aprRefinement) setAprSelectedOption(null);
-  }
-
-  function changeAprAdditionalContext(value: string) {
-    setAprAdditionalContext(value);
-    setAprRefinementConsent(false);
-    if (aprRefinement) setAprSelectedOption(null);
-  }
-
-  function aprRefinementIsCurrent(
-    refinement: AprRefinementSuggestion,
-  ): boolean {
-    return (
-      aprSourceIsCurrent(refinement.source) &&
-      JSON.stringify(currentAprAnswers()) ===
-        JSON.stringify(refinement.answers) &&
-      JSON.stringify(currentAprIdeaAnswers()) ===
-        JSON.stringify(refinement.ideaAnswers) &&
-      normalizeAprAdditionalContext(aprAdditionalContext) ===
-        refinement.additionalContext
-    );
-  }
-
-  async function refineApr() {
-    if (!aprSuggestion) return;
-    if (!aprSourceIsCurrent(aprSuggestion.source)) {
-      setAprRefinementConsent(false);
-      report(
-        new Error(
-          "This accomplishment changed. Analyze it again before refining.",
-        ),
-      );
-      return;
-    }
-    const answers = currentAprAnswers();
-    const ideaAnswers = currentAprIdeaAnswers();
-    const additionalContext =
-      normalizeAprAdditionalContext(aprAdditionalContext);
-    if (!answers.length && !ideaAnswers.length && !additionalContext) {
-      setAprRefinementConsent(false);
-      report(
-        new Error(
-          "Provide at least one factual answer, confirmed idea answer, or additional context before refining.",
-        ),
-      );
-      return;
-    }
-    setBusy("refine");
-    try {
-      const value = await refineAccomplishment(
-        aprSuggestion.source,
-        aprSuggestion.value.questions,
-        answers,
-        aprSuggestion.value.ideasToVerify,
-        ideaAnswers,
-        additionalContext,
-        aprRefinementConsent,
-      );
-      setAprSuggestion({ value, source: aprSuggestion.source });
-      setAprAnswers(value.questions.map(() => ""));
-      setAprIdeaAnswers(value.ideasToVerify.map(() => ""));
-      setAprAdditionalContext("");
-      setAprSelectedOption(null);
-      setAprRefinement({
-        value,
-        source: aprSuggestion.source,
-        answers: [],
-        ideaAnswers: [],
-        additionalContext: "",
-      });
-      setNotice({
-        kind: "success",
-        text: "Your refined highlight is ready to review. Your resume has not been changed.",
-      });
-    } catch (error) {
-      report(error);
-    } finally {
-      setBusy(null);
-      setAprRefinementConsent(false);
-    }
-  }
-
   function applyAprSuggestion() {
     if (!resume || !aprSuggestion) return;
     if (!aprSourceIsCurrent(aprSuggestion.source)) {
@@ -538,14 +437,6 @@ function App() {
     );
     if (!option) {
       report(new Error("Select a fresh rewrite option before applying."));
-      return;
-    }
-    if (aprRefinement && !aprRefinementIsCurrent(aprRefinement)) {
-      report(
-        new Error(
-          "These details changed after refinement. Refine again before applying.",
-        ),
-      );
       return;
     }
     try {
@@ -1058,23 +949,18 @@ function App() {
                           stale:
                             aprTarget !== null &&
                             !aprSourceIsCurrent(aprTarget),
-                          answers: aprAnswers,
-                          onAnswer: changeAprAnswer,
-                          ideaAnswers: aprIdeaAnswers,
-                          onIdeaAnswer: changeAprIdeaAnswer,
-                          additionalContext: aprAdditionalContext,
-                          onAdditionalContext: changeAprAdditionalContext,
-                          refinementConsent: aprRefinementConsent,
-                          onRefinementConsent: setAprRefinementConsent,
-                          onRefine: () => void refineApr(),
-                          refinement: aprRefinement?.value ?? null,
-                          refinementStale:
-                            aprRefinement !== null &&
-                            !aprRefinementIsCurrent(aprRefinement),
                           onApply: applyAprSuggestion,
                           selectedOption: aprSelectedOption,
                           onSelectOption: setAprSelectedOption,
                           onKeep: resetApr,
+                          feedback: aprFeedback,
+                          onFeedback: (value) => {
+                            setAprFeedback(value);
+                            setAprRefineConsent(false);
+                          },
+                          refineConsent: aprRefineConsent,
+                          onRefineConsent: setAprRefineConsent,
+                          onRefine: () => void refineApr(),
                           status: copilot,
                           busy,
                         }}
@@ -1089,11 +975,7 @@ function App() {
                     >
                       <fieldset
                         className="assistant-fieldset"
-                        disabled={
-                          busy === "generate" ||
-                          busy === "analyze" ||
-                          busy === "refine"
-                        }
+                        disabled={busy === "generate" || busy === "analyze"}
                       >
                         <CopilotPanel
                           resume={resume}

@@ -236,6 +236,18 @@ function move<T>(items: T[], index: number, direction: number): T[] {
   return result;
 }
 
+function createExperience(): Experience {
+  return {
+    id: crypto.randomUUID(),
+    role: "",
+    company: "",
+    location: "",
+    startDate: "",
+    endDate: "",
+    bullets: [""],
+  };
+}
+
 export function Editor({
   resume,
   onChange,
@@ -374,6 +386,20 @@ export function Editor({
           <span className="section-number">03</span>
         </summary>
         <div className="section-fields">
+          {resume.experience.length > 0 && (
+            <button
+              className="add-button"
+              disabled={resume.experience.length >= 30}
+              onClick={() =>
+                onChange({
+                  ...resume,
+                  experience: [createExperience(), ...resume.experience],
+                })
+              }
+            >
+              <Plus size={16} /> Add experience to top
+            </button>
+          )}
           {resume.experience.map((entry, index) => (
             <div className="entry-card" key={entry.id}>
               <div className="entry-topline">
@@ -534,22 +560,11 @@ export function Editor({
             onClick={() =>
               onChange({
                 ...resume,
-                experience: [
-                  ...resume.experience,
-                  {
-                    id: crypto.randomUUID(),
-                    role: "",
-                    company: "",
-                    location: "",
-                    startDate: "",
-                    endDate: "",
-                    bullets: [""],
-                  },
-                ],
+                experience: [...resume.experience, createExperience()],
               })
             }
           >
-            <Plus size={16} /> Add experience
+            <Plus size={16} /> Add experience to end
           </button>
         </div>
       </details>

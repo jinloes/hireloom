@@ -9,14 +9,10 @@ import {
   initialWorkspace,
   jobKeywords,
   MAX_WORKSPACE_BYTES,
-  normalizeAprAdditionalContext,
-  normalizeAprAnswers,
   parseWorkspace,
   resumeReadiness,
   validateProposal,
   validateAprAnalysis,
-  validateAprQuestionAnswers,
-  validateAprRefinement,
   validateAprTarget,
   type Resume,
 } from "./model";
@@ -138,8 +134,6 @@ describe("AI proposals", () => {
           ],
         },
       ],
-      questions: ["What changed after the redesign?"],
-      ideasToVerify: ["Did the redesign reduce onboarding time?"],
     });
 
     it("validates exact targets and atomically applies unified and split options", () => {
@@ -201,11 +195,20 @@ describe("AI proposals", () => {
       expect(() =>
         validateAprAnalysis({ ...analysis, invented: true }, target),
       ).toThrow();
-      expect(() =>
+      expect(
         validateAprAnalysis(
           { ...analysis, options: [analysis.options[0]] },
           target,
-        ),
+        ).options,
+      ).toEqual([analysis.options[0]]);
+      expect(
+        validateAprAnalysis(
+          { ...analysis, options: [analysis.options[1]] },
+          target,
+        ).options,
+      ).toEqual([analysis.options[1]]);
+      expect(() =>
+        validateAprAnalysis({ ...analysis, options: [] }, target),
       ).toThrow();
       expect(() =>
         validateAprAnalysis(
@@ -242,20 +245,10 @@ describe("AI proposals", () => {
       ).toThrow("distinct");
       expect(() =>
         validateAprAnalysis(
-          {
-            ...analysis,
-            questions: ["Same?"],
-            ideasToVerify: ["Same?"],
-          },
+          { ...analysis, questions: ["What changed?"] },
           target,
         ),
-      ).toThrow("unique");
-      expect(() =>
-        validateAprAnalysis(
-          { ...analysis, ideasToVerify: ["Unverified claim."] },
-          target,
-        ),
-      ).toThrow("confirmation questions");
+      ).toThrow();
       expect(() =>
         validateAprAnalysis(
           {
@@ -282,189 +275,7 @@ describe("AI proposals", () => {
       ).toThrow("no longer matches");
     });
 
-    it("normalizes separate answer groups and validates complete refinement echoes", () => {
-      const resume = exampleResume();
-      const target = {
-        resumeId: resume.id,
-        experienceId: resume.experience[0].id,
-        bulletIndex: 0,
-        role: resume.experience[0].role,
-        bullet: resume.experience[0].bullets[0],
-      };
-      const questions = ["What changed?", "Who benefited?", "How was it done?"];
-      const ideas = ["Did this improve conversion?"];
-      const answers = normalizeAprAnswers(questions, [
-        "  Faster onboarding.  ",
-        "",
-        " With usability tests. ",
-      ]);
-      expect(answers).toEqual([
-        { question: questions[0], answer: "Faster onboarding." },
-        { question: questions[2], answer: "With usability tests." },
-      ]);
-      expect(validateAprQuestionAnswers(questions, answers)).toEqual(answers);
-      const ideaAnswers = normalizeAprAnswers(ideas, ["Yes, by 4%."]);
-      const additionalContext = normalizeAprAdditionalContext(
-        "  The affected product was the customer onboarding flow.  ",
-      );
-      const refinement = {
-        ...coreResult(target),
-        answers,
-        ideaAnswers,
-        additionalContext,
-      };
-      expect(
-        validateAprRefinement(
-          refinement,
-          target,
-          answers,
-          ideaAnswers,
-          additionalContext,
-        ),
-      ).toEqual(refinement);
-    });
-
-    it("rejects invalid APR answer binding, limits, and refinement data", () => {
-      const resume = exampleResume();
-      const target = {
-        resumeId: resume.id,
-        experienceId: resume.experience[0].id,
-        bulletIndex: 0,
-        role: resume.experience[0].role,
-        bullet: resume.experience[0].bullets[0],
-      };
-      const questions = ["First?", "Second?"];
-      expect(() => normalizeAprAnswers(questions, [""])).toThrow("match");
-      expect(() =>
-        normalizeAprAnswers(["Duplicate?", "Duplicate?"], ["a", "b"]),
-      ).toThrow("unique");
-      expect(() =>
-        validateAprQuestionAnswers(questions, [
-          { question: "Second?", answer: "two" },
-          { question: "First?", answer: "one" },
-        ]),
-      ).toThrow("display order");
-      expect(() =>
-        validateAprQuestionAnswers(questions, [
-          { question: "First?", answer: "one" },
-          { question: "First?", answer: "again" },
-        ]),
-      ).toThrow("duplicated");
-      expect(() =>
-        validateAprQuestionAnswers(questions, [
-          { question: "Unknown?", answer: "one" },
-        ]),
-      ).toThrow("unknown");
-      expect(() =>
-        validateAprQuestionAnswers(questions, [
-          { question: "First?", answer: " untrimmed " },
-        ]),
-      ).toThrow("trimmed");
-      expect(() =>
-        validateAprQuestionAnswers(questions, [
-          { question: "First?", answer: "x".repeat(2_001) },
-        ]),
-      ).toThrow();
-      expect(() =>
-        normalizeAprAnswers(["First?"], ["é".repeat(1_001)]),
-      ).toThrow("UTF-8 bytes");
-      expect(validateAprQuestionAnswers(questions, [])).toEqual([]);
-      const answers = [{ question: "First?", answer: "one" }];
-      const ideaAnswers = [
-        { question: "Did it improve adoption?", answer: "Yes." },
-      ];
-      const valid = {
-        ...coreResult(target),
-        answers,
-        ideaAnswers,
-        additionalContext: "",
-      };
-      expect(() =>
-        validateAprRefinement(
-          { ...valid, options: [] },
-          target,
-          answers,
-          ideaAnswers,
-          "",
-        ),
-      ).not.toThrow();
-      expect(() =>
-        validateAprRefinement(
-          {
-            ...valid,
-            target: { ...target, bulletIndex: 1 },
-          },
-          target,
-          answers,
-          ideaAnswers,
-          "",
-        ),
-      ).toThrow("different accomplishment");
-      expect(() =>
-        validateAprRefinement(
-          {
-            ...valid,
-            answers: [{ question: "First?", answer: "other" }],
-          },
-          target,
-          answers,
-          ideaAnswers,
-          "",
-        ),
-      ).toThrow("different answers");
-      expect(() =>
-        validateAprRefinement(
-          {
-            ...valid,
-            ideaAnswers: [
-              { question: "Did it improve adoption?", answer: "No." },
-            ],
-          },
-          target,
-          answers,
-          ideaAnswers,
-          "",
-        ),
-      ).toThrow("different confirmed ideas");
-      expect(() =>
-        validateAprRefinement(
-          {
-            ...valid,
-            additionalContext: "Different context.",
-          },
-          target,
-          answers,
-          ideaAnswers,
-          "Expected context.",
-        ),
-      ).toThrow("different additional context");
-      expect(() =>
-        validateAprRefinement(
-          {
-            ...valid,
-            extra: true,
-          },
-          target,
-          answers,
-          ideaAnswers,
-          "",
-        ),
-      ).toThrow();
-      expect(() =>
-        validateAprRefinement(
-          {
-            ...coreResult(target),
-            answers: [],
-            ideaAnswers: [],
-            additionalContext: "",
-          },
-          target,
-          [],
-          [],
-          "",
-        ),
-      ).toThrow("answer");
-
+    it("rejects split options that exceed the experience highlight cap", () => {
       const capped = exampleResume();
       capped.experience[0].bullets = Array(30).fill("Existing.");
       const cappedTarget = {

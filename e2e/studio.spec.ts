@@ -61,6 +61,25 @@ test("edits, saves, and reloads a local resume", async ({ page }) => {
   ).toBeDisabled();
 });
 
+test("adds experience entries to the top or end", async ({ page }) => {
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("button", { name: "Add experience to top" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Add experience to end" }).click();
+  await page.getByLabel("Job title 1", { exact: true }).fill("Earlier role");
+
+  await page.getByRole("button", { name: "Add experience to top" }).click();
+  await expect(page.getByLabel("Job title 1", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Job title 2", { exact: true })).toHaveValue(
+    "Earlier role",
+  );
+
+  await page.getByRole("button", { name: "Add experience to end" }).click();
+  await expect(page.getByLabel("Job title 3", { exact: true })).toHaveValue("");
+});
+
 test("example, design, PDF text, backups, duplicate and delete", async ({
   page,
 }, testInfo) => {
@@ -137,9 +156,9 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
   await expect(
     page.getByRole("button", { name: "Apply selected option" }),
   ).toHaveCount(0);
-  await expect(page.getByText("Ideas to verify", { exact: true })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Refine with my details" }),
+  ).toHaveCount(0);
   await expect(page.getByTestId("resume-preview")).toContainText(
     "Kept editing this highlight locally in the browser preview.",
   );

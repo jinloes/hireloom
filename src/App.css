@@ -1471,8 +1471,7 @@ button {
   line-height: 1.9;
   padding: 13px 0 11px;
 }
-.highlight-guidance > .generate-button,
-.highlight-refinement-request > .generate-button {
+.highlight-guidance > .generate-button {
   width: 100%;
   margin-top: 11px;
 }
@@ -1487,9 +1486,7 @@ button {
   padding: 11px 0;
 }
 .highlight-dimension h4,
-.highlight-questions h4,
-.highlight-options h4,
-.highlight-ideas h4 {
+.highlight-options h4 {
   color: #547240;
   font-size: 10px;
 }
@@ -1522,45 +1519,6 @@ button {
 .apr-status.missing {
   color: #985434;
   background: #f7e5db;
-}
-.highlight-questions {
-  border-top: 1px solid #e7ecdf;
-  margin-top: 12px;
-  padding-top: 12px;
-}
-.highlight-questions > h4 {
-  margin: 0 0 5px;
-}
-.apr-answer {
-  border-top: 1px solid #e7ecdf;
-  padding: 12px 0;
-}
-.apr-answer > p {
-  margin: 0 0 8px;
-  font-weight: 600;
-}
-.apr-answer .field {
-  margin: 0;
-}
-.apr-answer textarea {
-  min-height: 76px;
-  resize: vertical;
-}
-.highlight-refinement-request {
-  border-top: 1px solid #d8e4c9;
-  margin-top: 4px;
-  padding-top: 12px;
-}
-.highlight-ideas {
-  border: 1px solid #e8ddbc;
-  border-radius: 7px;
-  background: #fffaf0;
-  margin: 12px 0;
-  padding: 11px;
-}
-.highlight-ideas > h4 {
-  margin: 0 0 5px;
-  color: #80632f;
 }
 .highlight-guidance-status {
   color: #65745a;
@@ -1658,6 +1616,23 @@ button {
 .highlight-guidance-actions .button {
   flex: 1;
   font-size: 9px;
+}
+.highlight-refinement {
+  border-top: 1px solid #d8e4c9;
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  padding-top: 14px;
+}
+.highlight-refinement > label:first-child {
+  font-weight: 700;
+}
+.highlight-refinement textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+.highlight-refinement > .button {
+  justify-self: start;
 }
 .inline-error {
   font-size: 10px;
