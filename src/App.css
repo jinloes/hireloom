@@ -1488,7 +1488,8 @@ button {
 }
 .highlight-dimension h4,
 .highlight-questions h4,
-.highlight-comparison h4 {
+.highlight-options h4,
+.highlight-ideas h4 {
   color: #547240;
   font-size: 10px;
 }
@@ -1550,38 +1551,103 @@ button {
   margin-top: 4px;
   padding-top: 12px;
 }
+.highlight-ideas {
+  border: 1px solid #e8ddbc;
+  border-radius: 7px;
+  background: #fffaf0;
+  margin: 12px 0;
+  padding: 11px;
+}
+.highlight-ideas > h4 {
+  margin: 0 0 5px;
+  color: #80632f;
+}
 .highlight-guidance-status {
   color: #65745a;
   font-size: 10px;
   line-height: 1.7;
   margin: 11px 0 0;
 }
-.highlight-comparison {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 9px;
+.highlight-options {
   margin-top: 13px;
 }
-.highlight-comparison > div {
+.highlight-current {
   border: 1px solid #dfe7d6;
   border-radius: 6px;
   background: #fff;
   padding: 10px;
   min-width: 0;
 }
-.highlight-comparison > div:last-child {
-  border-color: #b9cda2;
-  background: #f3f8e9;
-}
-.highlight-comparison h4 {
+.highlight-current h4 {
   margin: 0 0 7px;
 }
-.highlight-comparison p {
+.highlight-current p {
   color: #4f6248;
   font-size: 10px;
   line-height: 1.75;
   margin: 0;
   overflow-wrap: anywhere;
+}
+.highlight-option-group {
+  border: 0;
+  margin: 12px 0 0;
+  padding: 0;
+  min-width: 0;
+}
+.highlight-option-group legend {
+  color: #547240;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0;
+}
+.highlight-option-group > .fine-print {
+  margin: 5px 0 9px;
+}
+.highlight-option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid #dfe7d6;
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+  margin-top: 8px;
+  padding: 10px;
+}
+.highlight-option-card:hover {
+  border-color: #b9cda2;
+}
+.highlight-option-card.selected {
+  border-color: #75995c;
+  background: #f3f8e9;
+  box-shadow: 0 0 0 1px #75995c;
+}
+.highlight-option-card:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.highlight-option-card input {
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+}
+.highlight-option-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #5e7352;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.highlight-option-copy strong {
+  color: #37513a;
+  font-size: 10px;
+}
+.highlight-option-copy ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.highlight-option-copy li + li {
+  margin-top: 5px;
 }
 .highlight-guidance-actions {
   display: flex;
@@ -2019,8 +2085,8 @@ button {
   .document-title input {
     width: 210px;
   }
-  .highlight-comparison {
-    grid-template-columns: 1fr;
+  .highlight-option-card {
+    padding: 9px;
   }
   .highlight-guidance-actions {
     align-items: stretch;

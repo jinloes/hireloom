@@ -6,7 +6,12 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import type { AprAnalysis, AprRefinement, AprTarget } from "../model";
+import type {
+  AprAnalysis,
+  AprOptionId,
+  AprRefinement,
+  AprTarget,
+} from "../model";
 import { desktop, type CopilotStatus } from "../platform";
 
 export type HighlightGuidanceController = {
@@ -19,6 +24,8 @@ export type HighlightGuidanceController = {
   stale: boolean;
   answers: string[];
   onAnswer: (index: number, value: string) => void;
+  ideaAnswers: string[];
+  onIdeaAnswer: (index: number, value: string) => void;
   additionalContext: string;
   onAdditionalContext: (value: string) => void;
   refinementConsent: boolean;
@@ -26,6 +33,8 @@ export type HighlightGuidanceController = {
   onRefine: () => void;
   refinement: AprRefinement | null;
   refinementStale: boolean;
+  selectedOption: AprOptionId | null;
+  onSelectOption: (value: AprOptionId) => void;
   onApply: () => void;
   onKeep: () => void;
   status: CopilotStatus | null;
@@ -50,6 +59,8 @@ export function HighlightGuidance({
     stale,
     answers,
     onAnswer,
+    ideaAnswers,
+    onIdeaAnswer,
     additionalContext,
     onAdditionalContext,
     refinementConsent,
@@ -57,6 +68,8 @@ export function HighlightGuidance({
     onRefine,
     refinement,
     refinementStale,
+    selectedOption,
+    onSelectOption,
     onApply,
     onKeep,
     status,
@@ -70,12 +83,26 @@ export function HighlightGuidance({
     analysis.project.status === "clear" &&
     analysis.result.status === "clear";
   const questions = allClear ? [] : (analysis?.questions ?? []);
-  const initialRewrite =
-    analysis?.rewrite?.trim() && analysis.rewrite !== analysis.target.bullet
-      ? analysis.rewrite
-      : null;
-  const suggestion =
-    refinement && !refinementStale ? refinement.rewrite : initialRewrite;
+  const ideasToVerify = analysis?.ideasToVerify ?? [];
+  const selected =
+    !refinementStale &&
+    analysis?.options.find((option) => option.id === selectedOption);
+  const optionLabels: Record<AprOptionId, { title: string; tradeoff: string }> =
+    {
+      concise: {
+        title: "Concise · unified",
+        tradeoff:
+          "Keeps the strongest supported facts in one compact highlight.",
+      },
+      "detail-forward": {
+        title: "Detail-forward · unified",
+        tradeoff: "Preserves more supported context in one highlight.",
+      },
+      split: {
+        title: "Split · two highlights",
+        tradeoff: "Separates two supported, nonredundant contributions.",
+      },
+    };
 
   return (
     <section
@@ -184,7 +211,7 @@ export function HighlightGuidance({
           )}
 
           <div className="highlight-questions">
-            <h4>Optional details</h4>
+            <h4>Optional factual details</h4>
             <p className="fine-print">
               Answer only what you know, or add other factual context that would
               improve the suggestion. Blank fields stay local.
@@ -201,6 +228,29 @@ export function HighlightGuidance({
                   />
                 </div>
               ))}
+            {ideasToVerify.length > 0 && (
+              <div
+                className="highlight-ideas"
+                aria-labelledby={`${regionId}-ideas-heading`}
+              >
+                <h4 id={`${regionId}-ideas-heading`}>Ideas to verify</h4>
+                <p className="fine-print">
+                  These ideas are unsupported until you confirm them. Answer
+                  only with facts you know; otherwise leave them blank.
+                </p>
+                {ideasToVerify.map((question, index) => (
+                  <div className="apr-answer" key={question}>
+                    <p>{question}</p>
+                    <GuidanceAnswerField
+                      label={`Idea answer ${index + 1}`}
+                      value={ideaAnswers[index] ?? ""}
+                      onChange={(value) => onIdeaAnswer(index, value)}
+                      hint="Optional. A nonblank answer is treated as a user-confirmed fact."
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="apr-answer">
               <GuidanceAnswerField
                 label="Additional factual context"
@@ -215,8 +265,9 @@ export function HighlightGuidance({
                 <ShieldCheck size={18} />
                 <span>
                   A refinement sends only the role, original highlight, your
-                  nonblank answers, and additional factual context. Unanswered
-                  questions and all other resume data stay local.
+                  nonblank factual answers, confirmed idea answers, and
+                  additional factual context. Unanswered questions and all other
+                  resume data stay local.
                 </span>
               </p>
               <label className="consent-check">
@@ -240,6 +291,7 @@ export function HighlightGuidance({
                   !status?.available ||
                   stale ||
                   (!answers.some((answer) => answer.trim()) &&
+                    !ideaAnswers.some((answer) => answer.trim()) &&
                     !additionalContext.trim()) ||
                   !refinementConsent ||
                   Boolean(busy)
@@ -268,24 +320,55 @@ export function HighlightGuidance({
           {refinementStale && refinement && !stale && (
             <p className="inline-error" role="status">
               The answers or additional context changed after refinement. The
-              initial suggestion is shown until you refine again.
+              refined options are stale until you refine again.
             </p>
           )}
 
-          {suggestion ? (
-            <div className="highlight-comparison">
-              <div>
+          {analysis.options.length > 0 ? (
+            <div className="highlight-options">
+              <div className="highlight-current">
                 <h4>Current highlight</h4>
                 <p>{currentHighlight}</p>
               </div>
-              <div>
-                <h4>Suggested highlight</h4>
-                <p>{suggestion}</p>
-              </div>
+              <fieldset
+                className="highlight-option-group"
+                disabled={stale || refinementStale || Boolean(busy)}
+              >
+                <legend>Rewrite options</legend>
+                <p className="fine-print">
+                  Review every option, then select one. Nothing is selected or
+                  applied automatically.
+                </p>
+                <div role="radiogroup" aria-label="Rewrite options">
+                  {analysis.options.map((option) => (
+                    <label
+                      className={`highlight-option-card${selectedOption === option.id ? " selected" : ""}`}
+                      key={option.id}
+                    >
+                      <input
+                        type="radio"
+                        name={`${regionId}-rewrite-option`}
+                        value={option.id}
+                        checked={selectedOption === option.id}
+                        onChange={() => onSelectOption(option.id)}
+                      />
+                      <span className="highlight-option-copy">
+                        <strong>{optionLabels[option.id].title}</strong>
+                        <span>{optionLabels[option.id].tradeoff}</span>
+                        <ul>
+                          {option.bullets.map((bullet) => (
+                            <li key={bullet}>{bullet}</li>
+                          ))}
+                        </ul>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </div>
           ) : (
             <p className="highlight-guidance-status" role="status">
-              Copilot did not provide a truthful changed suggestion. Keep the
+              Copilot did not provide truthful changed rewrite options. Keep the
               current highlight or add facts you know and request fresh
               guidance.
             </p>
@@ -294,10 +377,10 @@ export function HighlightGuidance({
           <div className="highlight-guidance-actions">
             <button
               className="button primary"
-              disabled={!suggestion || stale || Boolean(busy)}
+              disabled={!selected || stale || refinementStale || Boolean(busy)}
               onClick={onApply}
             >
-              <CheckCheck size={16} /> Apply suggested highlight
+              <CheckCheck size={16} /> Apply selected option
             </button>
             <button
               className="button secondary"

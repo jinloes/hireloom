@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import {
-  applyAprRewrite,
+  applyAprOption,
   applyProposal,
   createResume,
   documentFilename,
@@ -36,6 +36,7 @@ import {
   parseWorkspace,
   resumeReadiness,
   type AprAnalysis,
+  type AprOptionId,
   type AprQuestionAnswer,
   type AprRefinement,
   type AprTarget,
@@ -68,6 +69,7 @@ type AprRefinementSuggestion = {
   value: AprRefinement;
   source: AprTarget;
   answers: AprQuestionAnswer[];
+  ideaAnswers: AprQuestionAnswer[];
   additionalContext: string;
 };
 
@@ -98,7 +100,10 @@ function App() {
     null,
   );
   const [aprAnswers, setAprAnswers] = useState<string[]>([]);
+  const [aprIdeaAnswers, setAprIdeaAnswers] = useState<string[]>([]);
   const [aprAdditionalContext, setAprAdditionalContext] = useState("");
+  const [aprSelectedOption, setAprSelectedOption] =
+    useState<AprOptionId | null>(null);
   const [aprRefinementConsent, setAprRefinementConsent] = useState(false);
   const [aprRefinement, setAprRefinement] =
     useState<AprRefinementSuggestion | null>(null);
@@ -121,7 +126,9 @@ function App() {
     setAprConsent(false);
     setAprSuggestion(null);
     setAprAnswers([]);
+    setAprIdeaAnswers([]);
     setAprAdditionalContext("");
+    setAprSelectedOption(null);
     setAprRefinementConsent(false);
     setAprRefinement(null);
   }
@@ -352,7 +359,9 @@ function App() {
     setAprConsent(false);
     setAprSuggestion(null);
     setAprAnswers([]);
+    setAprIdeaAnswers([]);
     setAprAdditionalContext("");
+    setAprSelectedOption(null);
     setAprRefinementConsent(false);
     setAprRefinement(null);
   }
@@ -373,7 +382,9 @@ function App() {
       const value = await analyzeAccomplishment(aprTarget, aprConsent);
       setAprSuggestion({ value, source: aprTarget });
       setAprAnswers(value.questions.map(() => ""));
+      setAprIdeaAnswers(value.ideasToVerify.map(() => ""));
       setAprAdditionalContext("");
+      setAprSelectedOption(null);
       setAprRefinementConsent(false);
       setAprRefinement(null);
       setNotice({
@@ -405,6 +416,14 @@ function App() {
     return normalizeAprAnswers(aprSuggestion.value.questions, aprAnswers);
   }
 
+  function currentAprIdeaAnswers(): AprQuestionAnswer[] {
+    if (!aprSuggestion) return [];
+    return normalizeAprAnswers(
+      aprSuggestion.value.ideasToVerify,
+      aprIdeaAnswers,
+    );
+  }
+
   function changeAprAnswer(index: number, value: string) {
     setAprAnswers((current) =>
       current.map((answer, answerIndex) =>
@@ -412,11 +431,23 @@ function App() {
       ),
     );
     setAprRefinementConsent(false);
+    if (aprRefinement) setAprSelectedOption(null);
+  }
+
+  function changeAprIdeaAnswer(index: number, value: string) {
+    setAprIdeaAnswers((current) =>
+      current.map((answer, answerIndex) =>
+        answerIndex === index ? value : answer,
+      ),
+    );
+    setAprRefinementConsent(false);
+    if (aprRefinement) setAprSelectedOption(null);
   }
 
   function changeAprAdditionalContext(value: string) {
     setAprAdditionalContext(value);
     setAprRefinementConsent(false);
+    if (aprRefinement) setAprSelectedOption(null);
   }
 
   function aprRefinementIsCurrent(
@@ -426,6 +457,8 @@ function App() {
       aprSourceIsCurrent(refinement.source) &&
       JSON.stringify(currentAprAnswers()) ===
         JSON.stringify(refinement.answers) &&
+      JSON.stringify(currentAprIdeaAnswers()) ===
+        JSON.stringify(refinement.ideaAnswers) &&
       normalizeAprAdditionalContext(aprAdditionalContext) ===
         refinement.additionalContext
     );
@@ -443,13 +476,14 @@ function App() {
       return;
     }
     const answers = currentAprAnswers();
+    const ideaAnswers = currentAprIdeaAnswers();
     const additionalContext =
       normalizeAprAdditionalContext(aprAdditionalContext);
-    if (!answers.length && !additionalContext) {
+    if (!answers.length && !ideaAnswers.length && !additionalContext) {
       setAprRefinementConsent(false);
       report(
         new Error(
-          "Provide at least one answer or additional context before refining.",
+          "Provide at least one factual answer, confirmed idea answer, or additional context before refining.",
         ),
       );
       return;
@@ -460,14 +494,22 @@ function App() {
         aprSuggestion.source,
         aprSuggestion.value.questions,
         answers,
+        aprSuggestion.value.ideasToVerify,
+        ideaAnswers,
         additionalContext,
         aprRefinementConsent,
       );
+      setAprSuggestion({ value, source: aprSuggestion.source });
+      setAprAnswers(value.questions.map(() => ""));
+      setAprIdeaAnswers(value.ideasToVerify.map(() => ""));
+      setAprAdditionalContext("");
+      setAprSelectedOption(null);
       setAprRefinement({
         value,
         source: aprSuggestion.source,
-        answers,
-        additionalContext,
+        answers: [],
+        ideaAnswers: [],
+        additionalContext: "",
       });
       setNotice({
         kind: "success",
@@ -491,19 +533,28 @@ function App() {
       );
       return;
     }
-    const rewrite =
-      aprRefinement && aprRefinementIsCurrent(aprRefinement)
-        ? aprRefinement.value.rewrite
-        : aprSuggestion.value.rewrite;
-    try {
-      changeResume(
-        applyAprRewrite(resume, aprSuggestion.source, rewrite ?? ""),
+    const option = aprSuggestion.value.options.find(
+      (candidate) => candidate.id === aprSelectedOption,
+    );
+    if (!option) {
+      report(new Error("Select a fresh rewrite option before applying."));
+      return;
+    }
+    if (aprRefinement && !aprRefinementIsCurrent(aprRefinement)) {
+      report(
+        new Error(
+          "These details changed after refinement. Refine again before applying.",
+        ),
       );
+      return;
+    }
+    try {
+      changeResume(applyAprOption(resume, aprSuggestion.source, option));
       setUndo(resume);
       resetApr();
       setNotice({
         kind: "success",
-        text: "Suggested highlight applied. You can undo this until your next edit.",
+        text: "Selected highlight option applied. You can undo this until your next edit.",
       });
     } catch (error) {
       report(error);
@@ -1009,6 +1060,8 @@ function App() {
                             !aprSourceIsCurrent(aprTarget),
                           answers: aprAnswers,
                           onAnswer: changeAprAnswer,
+                          ideaAnswers: aprIdeaAnswers,
+                          onIdeaAnswer: changeAprIdeaAnswer,
                           additionalContext: aprAdditionalContext,
                           onAdditionalContext: changeAprAdditionalContext,
                           refinementConsent: aprRefinementConsent,
@@ -1019,6 +1072,8 @@ function App() {
                             aprRefinement !== null &&
                             !aprRefinementIsCurrent(aprRefinement),
                           onApply: applyAprSuggestion,
+                          selectedOption: aprSelectedOption,
+                          onSelectOption: setAprSelectedOption,
                           onKeep: resetApr,
                           status: copilot,
                           busy,

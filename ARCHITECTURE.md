@@ -59,8 +59,8 @@ Focused components remain controlled by `App`:
 - `Editor` emits updated resume values and places guidance under the active
   nonempty highlight.
 - `HighlightGuidance` renders the bounded disclosure, feedback, optional
-  answers and additional context, one current comparison, and explicit apply or
-  keep controls.
+  factual answers, separate idea confirmations, additional context, accessible
+  fixed-strategy option selection, and explicit apply or keep controls.
 - `StylePanel` emits template/accent changes.
 - `CopilotPanel` renders whole-resume consent and review controls but does not
   call native APIs itself.
@@ -93,16 +93,16 @@ The browser preview uses only `hireloom.workspace.v1` in `localStorage`.
 `src/platform.ts` is the only frontend module that chooses between Tauri and
 browser behavior. Its desktop methods invoke:
 
-| Command                  | Direction     | Result                                         |
-| ------------------------ | ------------- | ---------------------------------------------- |
-| `load_workspace`         | Rust to React | Validated workspace or no saved file           |
-| `save_workspace`         | React to Rust | Atomically persisted workspace                 |
-| `export_document`        | React to Rust | User-selected PDF/JSON save result             |
-| `copilot_status`         | React to Rust | Local CLI availability and version detail      |
-| `copilot_login`          | React to Rust | App-specific web login completion              |
-| `generate_resume`        | React to Rust | Validated, non-applied AI proposal             |
-| `analyze_accomplishment` | React to Rust | Validated, transient APR review for one bullet |
-| `refine_accomplishment`  | React to Rust | Validated, transient detail-bound rewrite      |
+| Command                  | Direction     | Result                                                          |
+| ------------------------ | ------------- | --------------------------------------------------------------- |
+| `load_workspace`         | Rust to React | Validated workspace or no saved file                            |
+| `save_workspace`         | React to Rust | Atomically persisted workspace                                  |
+| `export_document`        | React to Rust | User-selected PDF/JSON save result                              |
+| `copilot_status`         | React to Rust | Local CLI availability and version detail                       |
+| `copilot_login`          | React to Rust | App-specific web login completion                               |
+| `generate_resume`        | React to Rust | Validated, non-applied AI proposal                              |
+| `analyze_accomplishment` | React to Rust | Validated transient APR feedback, questions, ideas, and options |
+| `refine_accomplishment`  | React to Rust | Validated complete refreshed result with detail echoes          |
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.
@@ -150,56 +150,61 @@ and generation lock but presents it under the selected Experience highlight.
 React keeps resume ID, experience ID, and bullet index as local correlation
 state. Rust receives and validates that target, sends only the role and selected
 highlight as delimited untrusted prompt data, strictly validates the
-Action/Project/Result response, and attaches the unchanged local target to the
-result. The prompt defines Product or project explicitly and requests only the
-minimum factual questions for partial or missing dimensions, with zero
-questions for clear dimensions. The UI also suppresses questions when all three
-dimensions are clear.
+Action/Project/Result response, fixed rewrite strategies, factual questions,
+and separate confirmation-question ideas, then attaches the unchanged local
+target. Options are empty or contain two to three unique entries in canonical
+`concise`, `detail-forward`, `split` order. Unified strategies contain one
+bullet; split contains exactly two ordered bullets and is omitted unless facts
+support two nonredundant highlights. Questions and ideas are separately bounded
+and unique across both groups. The UI suppresses factual questions when all
+three dimensions are clear but keeps any separate ideas explicitly unsupported.
 
 The result is transient. React revalidates the echoed target and permits an
-explicit apply only while the active resume, experience, role, bullet index,
-and highlight text still match. Changes to unsent fields do not stale it, and
-the single-highlight helper cannot change adjacent highlights or other resume
-fields.
+explicit apply only after the user selects a fresh option and while the active
+resume, experience, role, bullet index, and highlight text still match. Changes
+to unsent fields do not stale it. Atomic apply splices either one or two
+returned bullets at the exact index, preserves adjacent order and all other
+resume fields, and rejects a split above the 30-highlight limit.
 
-Detail-guided refinement extends that transient contract without changing
-persistence. React stores answer text by displayed question index plus one
-freeform factual-context field, trims both, omits blank answers, and requires at
-least one nonblank answer or nonblank context plus a fresh,
-refinement-specific consent. IPC carries the exact local target, the complete
-current question list for correlation, an ordered subset of exact
-question/answer pairs, and the normalized context. TypeScript and Rust reject
-duplicate source or answered questions, unknown or reordered questions,
-untrimmed or oversized context, unknown fields, mismatched target/detail echoes,
-and empty, unchanged, or oversized rewrites.
+Detail-guided refinement extends that transient contract without persistence.
+React stores answer text by displayed index in separate factual-question and
+idea-confirmation groups plus one freeform context field. It trims values,
+omits blanks, and requires at least one factual answer, confirmed idea answer,
+or context value plus fresh refinement-specific consent. IPC carries the exact
+local target, both complete source lists for correlation, ordered subsets of
+exact question/answer pairs, and normalized context. TypeScript and Rust reject
+duplicate or overlapping sources, unknown or reordered pairs, non-question
+ideas, untrimmed or oversized details, unknown fields, and mismatched
+target/detail echoes.
 
-Only `{ role, bullet, answers: [{ question, answer }], additionalContext }`
-enters the delimited untrusted Copilot prompt. IDs, question indexes, APR
-status/feedback, the initial rewrite, contact fields, and other resume content
-remain outside prompt data. The command reuses the same generation lock, pinned
-model, empty tool list, isolated Copilot profile, JSON event transport, and
-process limits. Rust attaches the unchanged target, submitted normalized
-answers, and context after parsing; the platform adapter revalidates all echoes.
+Only `{ role, bullet, answers, confirmedIdeaAnswers, additionalContext }`
+enters the delimited untrusted Copilot prompt. IDs, unanswered source lists,
+question indexes, prior APR status/feedback/options, contact fields, and other
+resume content remain outside prompt data. Confirmed idea pairs are explicitly
+labeled as user-confirmed facts. The command reuses the same generation lock,
+pinned model, empty tool list, isolated Copilot profile, JSON event transport,
+and process limits. Rust parses the same complete core result as initial
+analysis, attaches the unchanged target and submitted detail echoes, and the
+platform adapter revalidates every echo.
 
-The initial analysis rewrite and required detail-guided rewrite share one
-prompt-level quality invariant: produce one concise, resume-ready bullet that
-begins with a strong action verb, naturally combines Action with Product or
-project, includes Result only when supplied facts support it, preserves
-concrete product, audience, technical, and scope details, avoids APR labels and
-first-person phrasing, and does not invent or overstate facts, scope, ownership,
-outcomes, or metrics. This style contract is prompt-directed; strict parsing
-continues to enforce response shape, size, target/detail binding, and whether a
-refinement changed the original bullet, not subjective prose quality.
+Initial and refined options share one prompt-level quality invariant: every
+bullet begins with a strong action verb, naturally combines Action with Product
+or project, includes Result only when supplied facts support it, preserves
+concrete details, avoids APR labels and first-person phrasing, and does not
+invent or overstate facts, scope, ownership, outcomes, or metrics. Strict
+parsing additionally enforces UTF-8 byte limits, strategy order/cardinality,
+separate question groups, exact target/detail binding, and changed options.
 
-The inline comparison exposes one current suggestion: a fresh latest refinement
-supersedes the initial rewrite. Target changes stale both candidates; answer or
-context changes stale only a prior refinement, allowing the initial suggestion
-to remain current, and restoring the exact normalized detail snapshot makes the
-refinement fresh again. Success replaces only the latest refinement. Failure
-preserves the analysis, answers, context, prior suggestion, and resume while
-clearing request consent. Selecting another highlight, keeping the current
-highlight, or applying the suggestion clears all guidance state. None of this state is
-autosaved.
+The inline option radiogroup uses static labels and tradeoffs; untrusted output
+cannot define option semantics. Nothing is selected by default or after a
+refresh. A successful refinement supersedes the initial complete result,
+provides new blank answer fields for its refreshed questions and ideas, and
+resets selection. Editing either answer group or context clears refinement
+consent and makes a prior refinement and its selection stale; a fresh initial
+result remains valid. Failure preserves the current result, details, selection,
+and resume while clearing request consent. Selecting another highlight, keeping
+the current highlight, or applying the selected option clears all guidance
+state. None of this state is autosaved.
 
 Copilot authentication and request data may be retained inside the app-specific
 Copilot directory and processed under GitHub account policies. "Local-first"
@@ -268,24 +273,26 @@ activate help under one nonempty highlight
   -> role and bullet only in delimited untrusted prompt data
   -> strict APR response validation + local target echo
   -> visible What you did / Product or project / Impact feedback
-  -> no questions for all-clear; otherwise optional factual questions
+  -> optional factual-gap questions + separate unsupported Ideas to verify
+  -> zero or two-to-three fixed-strategy rewrite options
   -> stale-target guard
-  -> optional explicit single-bullet rewrite + existing undo snapshot
+  -> explicit option selection
+  -> atomic one/two-bullet apply + exact prior-resume undo snapshot
 ```
 
 ### Inline detail-guided refinement
 
 ```text
-answer displayed APR questions and/or add freeform factual context
-  -> trim inputs and omit blank answers in display order
+answer factual questions, confirm idea questions, and/or add factual context
+  -> trim inputs and omit blanks in each display order
   -> separate single-use refinement consent
   -> platform.refineAccomplishment
-  -> Rust target + full-question-list + ordered-pair/context validation
-  -> shared isolated Copilot runner with role/bullet/answered pairs/context only
-  -> strict changed-rewrite parsing + local target/detail echo
-  -> frontend echo validation + one current comparison suggestion
+  -> Rust target + both full source lists + ordered pair/context validation
+  -> isolated runner with role/bullet/answered pairs/confirmed ideas/context only
+  -> strict complete refreshed result parsing + local target/detail echoes
+  -> frontend echo validation + reset option selection/new answer fields
   -> exact target and submitted-detail freshness guards
-  -> explicit single-highlight apply or keep + existing undo snapshot
+  -> explicit one/two-highlight apply or keep + existing undo snapshot
 ```
 
 ## Trust boundaries and invariants
@@ -294,12 +301,14 @@ answer displayed APR questions and/or add freeform factual context
   strict schemas afterward.
 - **Renderer IPC is untrusted.** Native commands validate workspaces, resumes,
   export names/content, consent, and AI output.
-- **Job descriptions, resume text, APR questions, user answers, and additional
-  context are untrusted prompt data.** They cannot alter system instructions.
+- **Job descriptions, resume text, APR questions, idea questions, user answers,
+  and additional context are untrusted prompt data.** They cannot alter system
+  instructions; an idea becomes usable only through its separately confirmed
+  answer.
 - **AI output is untrusted.** It cannot introduce fields or change factual
   records; exact experience identity is required for whole-resume proposals,
   while APR output is rebound to and revalidated against the exact local bullet
-  target and refinement answer/context snapshot.
+  target and separate refinement answer/idea/context snapshots.
 - **Filesystem choices belong to the user.** Exports use the native save dialog;
   the renderer does not choose arbitrary paths.
 - **A missing workspace differs from a corrupt workspace.** Missing creates a
@@ -312,10 +321,10 @@ answer displayed APR questions and/or add freeform factual context
 ## Verification strategy
 
 - Vitest covers domain invariants and React workflows with mocked platform APIs,
-  including inline guidance/refinement consent, all-clear question suppression,
-  strict answer/context binding, context-only refinement, one-candidate
-  supersession, staleness, failure
-  preservation, and exact single-highlight application.
+  including guidance/refinement consent, canonical option shape, separate
+  question/idea binding, context-only refinement, explicit no-default
+  selection, refreshed-result supersession, staleness, failure preservation,
+  atomic split order/cap, and exact undo.
 - Rust unit tests cover native validation, atomic writes, prompt redaction,
   process isolation flags, bounded execution, and malformed responses.
 - Playwright exercises the browser adapter in Chromium and WebKit, including

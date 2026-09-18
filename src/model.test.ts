@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyAprRewrite,
+  applyAprOption,
   applyProposal,
   createResume,
   documentFilename,
@@ -105,7 +105,44 @@ describe("AI proposals", () => {
   });
 
   describe("APR accomplishment analysis", () => {
-    it("validates exact targets and applies only the selected bullet", () => {
+    const coreResult = (target: {
+      resumeId: string;
+      experienceId: string;
+      bulletIndex: number;
+      role: string;
+      bullet: string;
+    }) => ({
+      target,
+      action: { status: "clear" as const, feedback: "Specific action." },
+      project: { status: "partial" as const, feedback: "Add context." },
+      result: {
+        status: "missing" as const,
+        feedback: "Add supported impact.",
+      },
+      options: [
+        {
+          id: "concise" as const,
+          bullets: ["Led a focused onboarding redesign."],
+        },
+        {
+          id: "detail-forward" as const,
+          bullets: [
+            "Led a customer onboarding redesign through research, prototyping, and usability testing.",
+          ],
+        },
+        {
+          id: "split" as const,
+          bullets: [
+            "Led a customer onboarding redesign.",
+            "Validated the redesigned flow through usability testing.",
+          ],
+        },
+      ],
+      questions: ["What changed after the redesign?"],
+      ideasToVerify: ["Did the redesign reduce onboarding time?"],
+    });
+
+    it("validates exact targets and atomically applies unified and split options", () => {
       const resume = exampleResume();
       const target = {
         resumeId: resume.id,
@@ -115,21 +152,36 @@ describe("AI proposals", () => {
         bullet: resume.experience[0].bullets[1],
       };
       expect(validateAprTarget(target, resume)).toEqual(target);
-      const updated = applyAprRewrite(
-        resume,
-        target,
-        "Built a shared, accessible design system with engineering partners.",
+      const unified = applyAprOption(resume, target, {
+        id: "concise",
+        bullets: [
+          "Built a shared, accessible design system with engineering partners.",
+        ],
+      });
+      expect(unified.experience[0].bullets[1]).toContain("accessible");
+      const split = applyAprOption(resume, target, {
+        id: "split",
+        bullets: [
+          "Built a shared design system.",
+          "Partnered with engineering.",
+        ],
+      });
+      expect(split.experience[0].bullets.slice(1, 3)).toEqual([
+        "Built a shared design system.",
+        "Partnered with engineering.",
+      ]);
+      expect(split.experience[0].bullets[3]).toBe(
+        resume.experience[0].bullets[2],
       );
-      expect(updated.experience[0].bullets[1]).toContain("accessible");
-      expect(updated.experience[0].bullets[0]).toBe(
+      expect(split.experience[0].bullets[0]).toBe(
         resume.experience[0].bullets[0],
       );
-      expect(updated.experience[1]).toEqual(resume.experience[1]);
-      expect(updated.basics).toEqual(resume.basics);
-      expect(updated.summary).toBe(resume.summary);
+      expect(split.experience[1]).toEqual(resume.experience[1]);
+      expect(split.basics).toEqual(resume.basics);
+      expect(split.summary).toBe(resume.summary);
     });
 
-    it("rejects stale, malformed, oversized, and mismatched APR data", () => {
+    it("accepts only bounded canonical fact groups and option strategies", () => {
       const resume = exampleResume();
       const target = {
         resumeId: resume.id,
@@ -138,17 +190,7 @@ describe("AI proposals", () => {
         role: resume.experience[0].role,
         bullet: resume.experience[0].bullets[0],
       };
-      const analysis = {
-        target,
-        action: { status: "clear" as const, feedback: "Specific action." },
-        project: { status: "partial" as const, feedback: "Add context." },
-        result: {
-          status: "missing" as const,
-          feedback: "Add supported impact.",
-        },
-        rewrite: "Led a focused onboarding redesign.",
-        questions: ["What changed after the redesign?"],
-      };
+      const analysis = coreResult(target);
       expect(validateAprAnalysis(analysis, target)).toEqual(analysis);
       expect(() =>
         validateAprAnalysis(
@@ -161,28 +203,86 @@ describe("AI proposals", () => {
       ).toThrow();
       expect(() =>
         validateAprAnalysis(
-          { ...analysis, questions: Array(6).fill("Question?") },
+          { ...analysis, options: [analysis.options[0]] },
           target,
         ),
       ).toThrow();
       expect(() =>
         validateAprAnalysis(
-          { ...analysis, questions: ["Duplicate?", "Duplicate?"] },
+          {
+            ...analysis,
+            options: [analysis.options[1], analysis.options[0]],
+          },
+          target,
+        ),
+      ).toThrow("canonical");
+      expect(() =>
+        validateAprAnalysis(
+          {
+            ...analysis,
+            options: [
+              analysis.options[0],
+              { id: "split", bullets: ["Only one."] },
+            ],
+          },
+          target,
+        ),
+      ).toThrow("exactly 2");
+      expect(() =>
+        validateAprAnalysis(
+          {
+            ...analysis,
+            options: [
+              { id: "concise", bullets: ["Same rewrite."] },
+              { id: "detail-forward", bullets: ["Same rewrite."] },
+            ],
+          },
+          target,
+        ),
+      ).toThrow("distinct");
+      expect(() =>
+        validateAprAnalysis(
+          {
+            ...analysis,
+            questions: ["Same?"],
+            ideasToVerify: ["Same?"],
+          },
           target,
         ),
       ).toThrow("unique");
       expect(() =>
-        validateAprTarget({ ...target, bullet: "x".repeat(2_001) }, resume),
+        validateAprAnalysis(
+          { ...analysis, ideasToVerify: ["Unverified claim."] },
+          target,
+        ),
+      ).toThrow("confirmation questions");
+      expect(() =>
+        validateAprAnalysis(
+          {
+            ...analysis,
+            options: [
+              { id: "concise", bullets: [target.bullet] },
+              analysis.options[1],
+            ],
+          },
+          target,
+        ),
+      ).toThrow("change");
+      expect(() =>
+        validateAprTarget({ ...target, bullet: "é".repeat(1_001) }, resume),
       ).toThrow();
-      expect(() => applyAprRewrite(resume, target, target.bullet)).toThrow(
-        "changed",
-      );
+      expect(() =>
+        applyAprOption(resume, target, {
+          id: "concise",
+          bullets: [target.bullet],
+        }),
+      ).toThrow("changed");
       expect(() =>
         validateAprTarget({ ...target, role: "Changed role" }, resume),
       ).toThrow("no longer matches");
     });
 
-    it("normalizes ordered nonblank APR answers and validates refinement echoes", () => {
+    it("normalizes separate answer groups and validates complete refinement echoes", () => {
       const resume = exampleResume();
       const target = {
         resumeId: resume.id,
@@ -192,6 +292,7 @@ describe("AI proposals", () => {
         bullet: resume.experience[0].bullets[0],
       };
       const questions = ["What changed?", "Who benefited?", "How was it done?"];
+      const ideas = ["Did this improve conversion?"];
       const answers = normalizeAprAnswers(questions, [
         "  Faster onboarding.  ",
         "",
@@ -202,18 +303,24 @@ describe("AI proposals", () => {
         { question: questions[2], answer: "With usability tests." },
       ]);
       expect(validateAprQuestionAnswers(questions, answers)).toEqual(answers);
+      const ideaAnswers = normalizeAprAnswers(ideas, ["Yes, by 4%."]);
       const additionalContext = normalizeAprAdditionalContext(
         "  The affected product was the customer onboarding flow.  ",
       );
       const refinement = {
-        target,
+        ...coreResult(target),
         answers,
+        ideaAnswers,
         additionalContext,
-        rewrite:
-          "Led an onboarding redesign validated through usability testing.",
       };
       expect(
-        validateAprRefinement(refinement, target, answers, additionalContext),
+        validateAprRefinement(
+          refinement,
+          target,
+          answers,
+          ideaAnswers,
+          additionalContext,
+        ),
       ).toEqual(refinement);
     });
 
@@ -258,77 +365,121 @@ describe("AI proposals", () => {
           { question: "First?", answer: "x".repeat(2_001) },
         ]),
       ).toThrow();
+      expect(() =>
+        normalizeAprAnswers(["First?"], ["é".repeat(1_001)]),
+      ).toThrow("UTF-8 bytes");
       expect(validateAprQuestionAnswers(questions, [])).toEqual([]);
       const answers = [{ question: "First?", answer: "one" }];
+      const ideaAnswers = [
+        { question: "Did it improve adoption?", answer: "Yes." },
+      ];
+      const valid = {
+        ...coreResult(target),
+        answers,
+        ideaAnswers,
+        additionalContext: "",
+      };
       expect(() =>
         validateAprRefinement(
-          { target, answers, additionalContext: "", rewrite: target.bullet },
+          { ...valid, options: [] },
           target,
           answers,
+          ideaAnswers,
           "",
         ),
-      ).toThrow("changed");
+      ).not.toThrow();
       expect(() =>
         validateAprRefinement(
           {
+            ...valid,
             target: { ...target, bulletIndex: 1 },
-            answers,
-            additionalContext: "",
-            rewrite: "Changed.",
           },
           target,
           answers,
+          ideaAnswers,
           "",
         ),
       ).toThrow("different accomplishment");
       expect(() =>
         validateAprRefinement(
           {
-            target,
+            ...valid,
             answers: [{ question: "First?", answer: "other" }],
-            additionalContext: "",
-            rewrite: "Changed.",
           },
           target,
           answers,
+          ideaAnswers,
           "",
         ),
       ).toThrow("different answers");
       expect(() =>
         validateAprRefinement(
           {
-            target,
-            answers,
-            additionalContext: "Different context.",
-            rewrite: "Changed.",
+            ...valid,
+            ideaAnswers: [
+              { question: "Did it improve adoption?", answer: "No." },
+            ],
           },
           target,
           answers,
+          ideaAnswers,
+          "",
+        ),
+      ).toThrow("different confirmed ideas");
+      expect(() =>
+        validateAprRefinement(
+          {
+            ...valid,
+            additionalContext: "Different context.",
+          },
+          target,
+          answers,
+          ideaAnswers,
           "Expected context.",
         ),
       ).toThrow("different additional context");
       expect(() =>
         validateAprRefinement(
           {
-            target,
-            answers,
-            additionalContext: "",
-            rewrite: "Changed.",
+            ...valid,
             extra: true,
           },
           target,
           answers,
+          ideaAnswers,
           "",
         ),
       ).toThrow();
       expect(() =>
         validateAprRefinement(
-          { target, answers: [], additionalContext: "", rewrite: "Changed." },
+          {
+            ...coreResult(target),
+            answers: [],
+            ideaAnswers: [],
+            additionalContext: "",
+          },
           target,
+          [],
           [],
           "",
         ),
-      ).toThrow("answer or additional context");
+      ).toThrow("answer");
+
+      const capped = exampleResume();
+      capped.experience[0].bullets = Array(30).fill("Existing.");
+      const cappedTarget = {
+        resumeId: capped.id,
+        experienceId: capped.experience[0].id,
+        bulletIndex: 0,
+        role: capped.experience[0].role,
+        bullet: "Existing.",
+      };
+      expect(() =>
+        applyAprOption(capped, cappedTarget, {
+          id: "split",
+          bullets: ["First.", "Second."],
+        }),
+      ).toThrow("30-highlight");
     });
   });
 

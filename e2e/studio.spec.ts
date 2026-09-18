@@ -132,8 +132,14 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
     "Kept editing this highlight locally in the browser preview.",
   );
   await expect(
-    page.getByText("Suggested highlight", { exact: true }),
+    page.getByRole("radiogroup", { name: "Rewrite options" }),
   ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Apply selected option" }),
+  ).toHaveCount(0);
+  await expect(page.getByText("Ideas to verify", { exact: true })).toHaveCount(
+    0,
+  );
   await expect(page.getByTestId("resume-preview")).toContainText(
     "Kept editing this highlight locally in the browser preview.",
   );

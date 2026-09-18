@@ -3,7 +3,17 @@ import { z } from "zod";
 const id = z.string().min(1).max(100);
 const shortText = z.string().max(500);
 const bullet = z.string().max(2_000);
-const nonemptyBullet = bullet.refine((value) => value.trim().length > 0, {
+const utf8Length = (value: string) => new TextEncoder().encode(value).length;
+const utf8String = (maxBytes: number) =>
+  z.string().refine((value) => utf8Length(value) <= maxBytes, {
+    message: `Text must be at most ${maxBytes} UTF-8 bytes.`,
+  });
+const aprId = utf8String(100).refine((value) => value.trim().length > 0, {
+  message: "ID must not be blank.",
+});
+const aprShortText = utf8String(500);
+const aprText = utf8String(2_000);
+const aprNonemptyText = aprText.refine((value) => value.trim().length > 0, {
   message: "Text must not be blank.",
 });
 
@@ -102,57 +112,139 @@ export const proposalSchema = z.strictObject({
 });
 
 export const aprTargetSchema = z.strictObject({
-  resumeId: id,
-  experienceId: id,
+  resumeId: aprId,
+  experienceId: aprId,
   bulletIndex: z.number().int().min(0).max(29),
-  role: shortText,
-  bullet: nonemptyBullet,
+  role: aprShortText,
+  bullet: aprNonemptyText,
 });
 
 export const aprDimensionSchema = z.strictObject({
   status: z.enum(["clear", "partial", "missing"]),
-  feedback: nonemptyBullet,
+  feedback: aprNonemptyText,
 });
 
-export const aprAnalysisSchema = z
+export const aprOptionIdSchema = z.enum(["concise", "detail-forward", "split"]);
+
+export const aprOptionSchema = z
+  .strictObject({
+    id: aprOptionIdSchema,
+    bullets: z.array(aprNonemptyText).min(1).max(2),
+  })
+  .superRefine((option, ctx) => {
+    const expectedCount = option.id === "split" ? 2 : 1;
+    if (option.bullets.length !== expectedCount) {
+      ctx.addIssue({
+        code: "custom",
+        message: `${option.id} must contain exactly ${expectedCount} bullet${expectedCount === 1 ? "" : "s"}.`,
+        path: ["bullets"],
+      });
+    }
+  });
+
+const aprCoreSchema = z
   .strictObject({
     target: aprTargetSchema,
     action: aprDimensionSchema,
     project: aprDimensionSchema,
     result: aprDimensionSchema,
-    rewrite: z.string().max(2_000).optional(),
-    questions: z.array(nonemptyBullet).max(5),
+    options: z.array(aprOptionSchema).max(3),
+    questions: z.array(aprNonemptyText).max(5),
+    ideasToVerify: z.array(aprNonemptyText).max(5),
   })
-  .superRefine((analysis, ctx) => {
-    if (new Set(analysis.questions).size !== analysis.questions.length) {
+  .superRefine((result, ctx) => {
+    if (result.options.length === 1) {
       ctx.addIssue({
         code: "custom",
-        message: "APR questions must be unique.",
+        message:
+          "APR options must be empty or contain at least two strategies.",
+        path: ["options"],
+      });
+    }
+    const canonicalOrder = ["concise", "detail-forward", "split"];
+    const optionSequences = new Set<string>();
+    result.options.forEach((option, index) => {
+      if (option.id !== canonicalOrder[index]) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "APR options must be unique and in canonical strategy order.",
+          path: ["options", index, "id"],
+        });
+      }
+      if (
+        option.bullets.length === 1 &&
+        option.bullets[0] === result.target.bullet
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Every APR option must change the original highlight.",
+          path: ["options", index, "bullets"],
+        });
+      }
+      const sequence = JSON.stringify(option.bullets);
+      if (optionSequences.has(sequence)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "APR option bullet sequences must be distinct.",
+          path: ["options", index, "bullets"],
+        });
+      }
+      optionSequences.add(sequence);
+      if (
+        option.id === "split" &&
+        new Set(option.bullets).size !== option.bullets.length
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Split APR bullets must be nonredundant.",
+          path: ["options", index, "bullets"],
+        });
+      }
+    });
+    const allQuestions = [...result.questions, ...result.ideasToVerify];
+    if (new Set(allQuestions).size !== allQuestions.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: "APR questions and ideas must be unique across both groups.",
         path: ["questions"],
       });
     }
+    result.ideasToVerify.forEach((idea, index) => {
+      if (!idea.trim().endsWith("?")) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Ideas to verify must be confirmation questions.",
+          path: ["ideasToVerify", index],
+        });
+      }
+    });
   });
 
+export const aprAnalysisSchema = aprCoreSchema;
+
 export const aprQuestionAnswerSchema = z.strictObject({
-  question: nonemptyBullet,
-  answer: nonemptyBullet,
+  question: aprNonemptyText,
+  answer: aprNonemptyText,
 });
 
 export const aprRefinementSchema = z
   .strictObject({
-    target: aprTargetSchema,
+    ...aprCoreSchema.shape,
     answers: z.array(aprQuestionAnswerSchema).max(5),
-    additionalContext: bullet,
-    rewrite: nonemptyBullet,
+    ideaAnswers: z.array(aprQuestionAnswerSchema).max(5),
+    additionalContext: aprText,
   })
   .superRefine((refinement, ctx) => {
     if (
       refinement.answers.length === 0 &&
+      refinement.ideaAnswers.length === 0 &&
       refinement.additionalContext.trim().length === 0
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Provide at least one answer or additional context.",
+        message:
+          "Provide at least one factual answer, confirmed idea answer, or additional context.",
         path: ["additionalContext"],
       });
     }
@@ -163,6 +255,24 @@ export const aprRefinementSchema = z
         path: ["additionalContext"],
       });
     }
+    const core = aprCoreSchema.safeParse({
+      target: refinement.target,
+      action: refinement.action,
+      project: refinement.project,
+      result: refinement.result,
+      options: refinement.options,
+      questions: refinement.questions,
+      ideasToVerify: refinement.ideasToVerify,
+    });
+    if (!core.success) {
+      for (const issue of core.error.issues) {
+        ctx.addIssue({
+          code: "custom",
+          message: issue.message,
+          path: issue.path,
+        });
+      }
+    }
   });
 
 export type Resume = z.infer<typeof resumeSchema>;
@@ -172,6 +282,8 @@ export type Workspace = z.infer<typeof workspaceSchema>;
 export type AiProposal = z.infer<typeof proposalSchema>;
 export type AprTarget = z.infer<typeof aprTargetSchema>;
 export type AprDimension = z.infer<typeof aprDimensionSchema>;
+export type AprOptionId = z.infer<typeof aprOptionIdSchema>;
+export type AprOption = z.infer<typeof aprOptionSchema>;
 export type AprAnalysis = z.infer<typeof aprAnalysisSchema>;
 export type AprQuestionAnswer = z.infer<typeof aprQuestionAnswerSchema>;
 export type AprRefinement = z.infer<typeof aprRefinementSchema>;
@@ -380,7 +492,7 @@ export function normalizeAprAnswers(
   questions: string[],
   answers: string[],
 ): AprQuestionAnswer[] {
-  const validQuestions = z.array(nonemptyBullet).max(5).parse(questions);
+  const validQuestions = z.array(aprNonemptyText).max(5).parse(questions);
   if (new Set(validQuestions).size !== validQuestions.length) {
     throw new Error("APR questions must be unique.");
   }
@@ -388,20 +500,20 @@ export function normalizeAprAnswers(
     throw new Error("APR answers must match the current question list.");
   }
   return validQuestions.flatMap((question, index) => {
-    const answer = bullet.parse(answers[index]).trim();
+    const answer = aprText.parse(answers[index]).trim();
     return answer ? [{ question, answer }] : [];
   });
 }
 
 export function normalizeAprAdditionalContext(value: string): string {
-  return bullet.parse(value).trim();
+  return aprText.parse(value).trim();
 }
 
 export function validateAprQuestionAnswers(
   questions: string[],
   value: unknown,
 ): AprQuestionAnswer[] {
-  const validQuestions = z.array(nonemptyBullet).max(5).parse(questions);
+  const validQuestions = z.array(aprNonemptyText).max(5).parse(questions);
   if (new Set(validQuestions).size !== validQuestions.length) {
     throw new Error("APR questions must be unique.");
   }
@@ -430,6 +542,7 @@ export function validateAprRefinement(
   value: unknown,
   expectedTarget: AprTarget,
   expectedAnswers: AprQuestionAnswer[],
+  expectedIdeaAnswers: AprQuestionAnswer[],
   expectedAdditionalContext: string,
 ): AprRefinement {
   const refinement = aprRefinementSchema.parse(value);
@@ -450,26 +563,40 @@ export function validateAprRefinement(
       "Copilot returned a refinement for different answers. Nothing has been changed.",
     );
   }
+  if (
+    JSON.stringify(refinement.ideaAnswers) !==
+    JSON.stringify(expectedIdeaAnswers)
+  ) {
+    throw new Error(
+      "Copilot returned a refinement for different confirmed ideas. Nothing has been changed.",
+    );
+  }
   if (refinement.additionalContext !== expectedAdditionalContext) {
     throw new Error(
       "Copilot returned a refinement for different additional context. Nothing has been changed.",
     );
   }
-  if (refinement.rewrite === expectedTarget.bullet) {
-    throw new Error("Copilot did not provide a changed, nonempty rewrite.");
-  }
   return refinement;
 }
 
-export function applyAprRewrite(
+export function applyAprOption(
   resume: Resume,
   target: AprTarget,
-  rewrite: string,
+  option: AprOption,
 ): Resume {
   const validTarget = validateAprTarget(target, resume);
-  const validRewrite = bullet.parse(rewrite);
-  if (!validRewrite.trim() || validRewrite === validTarget.bullet) {
-    throw new Error("Copilot did not provide a changed, nonempty rewrite.");
+  const validOption = aprOptionSchema.parse(option);
+  if (
+    validOption.bullets.length === 1 &&
+    validOption.bullets[0] === validTarget.bullet
+  ) {
+    throw new Error("Copilot did not provide a changed, nonempty option.");
+  }
+  const experience = resume.experience.find(
+    (entry) => entry.id === validTarget.experienceId,
+  )!;
+  if (experience.bullets.length - 1 + validOption.bullets.length > 30) {
+    throw new Error("This option would exceed the 30-highlight limit.");
   }
   return {
     ...resume,
@@ -477,9 +604,11 @@ export function applyAprRewrite(
       entry.id === validTarget.experienceId
         ? {
             ...entry,
-            bullets: entry.bullets.map((text, index) =>
-              index === validTarget.bulletIndex ? validRewrite : text,
-            ),
+            bullets: [
+              ...entry.bullets.slice(0, validTarget.bulletIndex),
+              ...validOption.bullets,
+              ...entry.bullets.slice(validTarget.bulletIndex + 1),
+            ],
           }
         : entry,
     ),

@@ -34,8 +34,9 @@ connect to Copilot. It does not read your desktop workspace.
 - JSON workspace backups and validated, non-destructive imports.
 - Job-description keyword overlap and a transparent resume-essentials checklist.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
-  review, inline fact-bound highlight guidance and detail-guided refinement,
-  stale-result protection, and one-step undo until the next edit.
+  review, multiple fact-bound highlight options, separate ideas to verify,
+  detail-guided refinement, stale-result protection, and one-step undo until
+  the next edit.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details or click **try a fictional example**. The example
@@ -89,30 +90,38 @@ local.
 
 Guidance labels the factual dimensions as **What you did**, **Product or
 project**, and **Impact**. Each is marked clear, partial, or missing. When all
-three are clear, no follow-up questions are shown. Otherwise, Copilot may ask up
-to five concise questions about missing or partial details. You can also add
-freeform factual context, such as the product area, audience, constraints, or
-supported impact, even when no follow-up questions are needed. Answers and
-additional context are optional: blanks remain local, nonblank values are
-trimmed and sent only after a second single-use consent, and you can keep the
-current highlight or use the initial suggestion without providing more detail.
-Both the initial and detail-guided suggestions target the same concise,
-resume-ready APR-style bullet: a strong action-led statement that naturally
-combines what you did with the product or project, preserves supplied concrete
-details, and includes an impact only when the facts you submitted support it.
-The instruction is fact-bound rather than a guarantee of prose quality, so
-review every suggestion and never accept invented or overstated claims.
+three are clear, no factual-gap questions are shown. Otherwise, Copilot may ask
+up to five concise questions about missing or partial details. A visually
+separate **Ideas to verify** group contains up to five confirmation questions
+for potentially useful directions that are not yet supported. Those ideas
+remain questions and cannot enter a rewrite as facts unless you explicitly
+confirm them in their separate answer fields.
 
-The inline comparison presents only one current suggestion. A fresh
-detail-guided refinement replaces the initial suggestion in that comparison.
-**Apply suggested highlight** can update only the exact selected highlight and
-uses the existing one-step AI undo; **Keep current highlight** closes the
-guidance without editing the resume. Nothing applies automatically. A changed
-role, highlight, position, experience, or active resume makes the result stale
-and blocks apply. Editing an answer or the additional context clears refinement
-consent and makes only the prior refinement stale. CLI, timeout,
+You can also add freeform factual context, such as the product area, audience,
+constraints, or supported impact. Factual answers, confirmed idea answers, and
+additional context are optional: blanks remain local, nonblank values are
+trimmed and sent only after a second single-use consent. A successful refinement
+refreshes the APR feedback, factual questions, ideas, and complete option set.
+
+Guidance returns no truthful rewrite options or two to three fixed strategies:
+**Concise · unified** and **Detail-forward · unified** each replace the current
+highlight with one bullet; **Split · two highlights** is available only when
+the supplied facts support two nonredundant bullets. No option is selected
+automatically. Review the static strategy labels, tradeoffs, and every claim,
+then explicitly select an option before **Apply selected option** is enabled.
+Applying revalidates the exact resume, experience, role, highlight position,
+and original text. A unified option replaces only that highlight; a split
+atomically inserts its two bullets in order and is refused if it would exceed
+the 30-highlight limit. **Keep current highlight** closes without editing, and
+successful apply uses the existing exact one-step AI undo.
+
+A changed role, highlight, position, experience, active resume, or highlight
+reordering makes the result stale and blocks apply. Editing either answer group
+or additional context clears refinement consent and invalidates a prior
+refinement and its selection, without making a fresh initial analysis stale.
+CLI, timeout,
 malformed-output, and other request failures keep the relevant guidance,
-answers, context, prior suggestion, and resume unchanged while showing an
+answers, context, prior options, and resume unchanged while showing an
 error.
 
 In the browser preview, inline help remains discoverable but clearly reports
@@ -132,8 +141,9 @@ the highlight remains locally editable.
 - Whole-resume AI requests send the summary, work history, education, skills,
   professional headline, and job description to GitHub Copilot. Inline
   highlight guidance requests send only the selected highlight and its role; a
-  refinement additionally sends only the nonblank displayed question/answer
-  pairs and freeform additional context you provide. Dedicated name, email,
+  refinement additionally sends only the nonblank displayed factual
+  question/answer pairs, separately confirmed idea question/answer pairs, and
+  freeform additional context you provide. Dedicated name, email,
   phone, personal location, website, GitHub, diagnostics/initial rewrite, other
   resume fields, and local correlation IDs are excluded. **Anything you type
   into free text can still contain identifying information**; review and redact
@@ -186,7 +196,8 @@ selectable text, and single-column extraction order. These checks do not claim
 compatibility with every ATS or provide a hiring score. Frontend unit tests
 cover schemas, keyword boundaries, save failures, and AI consent/review/undo,
 including inline targeting, answer/context binding, context-only refinement,
-single-suggestion refinement, and staleness. Native tests use fake CLI
+multiple-option selection, split application, separate idea confirmation,
+refinement refresh, and staleness. Native tests use fake CLI
 processes, including guidance/refinement
 response and isolation coverage; tests never authenticate or spend Copilot
 usage.

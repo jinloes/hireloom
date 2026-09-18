@@ -126,6 +126,8 @@ export async function refineAccomplishment(
   target: AprTarget,
   questions: string[],
   answers: AprQuestionAnswer[],
+  ideasToVerify: string[],
+  ideaAnswers: AprQuestionAnswer[],
   additionalContext: string,
   consent: boolean,
 ): Promise<AprRefinement> {
@@ -134,11 +136,19 @@ export async function refineAccomplishment(
     throw new Error("Confirm that you want to send these details to Copilot.");
   const validTarget = validateAprTarget(target);
   const validAnswers = validateAprQuestionAnswers(questions, answers);
+  const validIdeaAnswers = validateAprQuestionAnswers(
+    ideasToVerify,
+    ideaAnswers,
+  );
   const validAdditionalContext =
     normalizeAprAdditionalContext(additionalContext);
-  if (!validAnswers.length && !validAdditionalContext) {
+  if (
+    !validAnswers.length &&
+    !validIdeaAnswers.length &&
+    !validAdditionalContext
+  ) {
     throw new Error(
-      "Provide at least one answer or additional context before refining.",
+      "Provide at least one factual answer, confirmed idea answer, or additional context before refining.",
     );
   }
   return validateAprRefinement(
@@ -146,11 +156,14 @@ export async function refineAccomplishment(
       target: validTarget,
       questions,
       answers: validAnswers,
+      ideasToVerify,
+      ideaAnswers: validIdeaAnswers,
       additionalContext: validAdditionalContext,
       consent,
     }),
     validTarget,
     validAnswers,
+    validIdeaAnswers,
     validAdditionalContext,
   );
 }
