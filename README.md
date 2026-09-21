@@ -29,7 +29,14 @@ connect to Copilot. It does not read your desktop workspace.
   experience entries that can be added at the top or end, reorderable
   experience and highlights with month/year dates and current-role support;
   education; and skills.
-- A live preview, Editorial and Modern layouts, and three accent colors.
+- Full-width Content, Copilot, Design, and Preview workspace tabs, with visible
+  Content tabs for Personal, Summary, Experience, Education, and Skills.
+- A responsive Experience summary/master-detail view with one selected job
+  editor.
+- Eight-second Undo for a removed job, education entry, or experience
+  highlight, including recovery after an autosave cycle.
+- A live Preview workspace, Editorial and Modern layouts, and three accent
+  colors.
 - Local autosaving with visible failures, retries, and recovery backup export.
 - A4, selectable-text PDFs with embedded fonts and automatic page overflow.
 - JSON workspace backups and validated, non-destructive imports.
@@ -194,8 +201,11 @@ npm run format:check
 Set `PLAYWRIGHT_PORT` to run browser tests on another port when `1420` is
 already in use, for example `PLAYWRIGHT_PORT=1422 npm run test:e2e`.
 
-The browser suite covers real editing, persistence, corrupt storage, imports,
-document management, desktop-only inline guidance, and exported PDF text in Chromium and WebKit. It also
+The browser suite covers workspace and Content tab navigation, full-width panel
+geometry, bounded scroll preservation, zoom-equivalent responsive behavior,
+Experience master-detail editing, item-removal recovery, real editing,
+persistence, corrupt storage, imports, document management, desktop-only inline
+guidance, and exported PDF text in Chromium and WebKit. It also
 checks ATS-relevant PDF compatibility: standard section headings, complete
 selectable text, and single-column extraction order. These checks do not claim
 compatibility with every ATS or provide a hiring score. Frontend unit tests

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Circle,
   Copy,
+  Eye,
   FileText,
   FolderOpen,
   Github,
@@ -37,6 +38,8 @@ import {
   type AprOptionId,
   type AprTarget,
   type AiProposal,
+  type Education,
+  type Experience,
   type Resume,
 } from "./model";
 import {
@@ -50,17 +53,52 @@ import {
   type CopilotStatus,
 } from "./platform";
 import { useWorkspace } from "./useWorkspace";
-import { Editor } from "./components/Editor";
+import {
+  Editor,
+  type ContentRemovalRequest,
+  type ContentViewState,
+} from "./components/Editor";
 import { ResumePreview } from "./components/ResumePreview";
 import { CopilotPanel } from "./components/CopilotPanel";
 import { StylePanel } from "./components/StylePanel";
 import fontLicense from "./assets/fonts/OFL.txt?raw";
 import "./App.css";
 
-type Tab = "content" | "copilot" | "style";
+type WorkspaceMode = "content" | "copilot" | "style" | "preview";
 type Notice = { kind: "success" | "error"; text: string };
 type Suggestion = { value: AiProposal; source: string };
 type AprSuggestion = { value: AprAnalysis; source: AprTarget };
+type ContentRemoval = ContentRemovalRequest & {
+  resumeId: string;
+  expiresAt: number;
+};
+type ContentStatus = {
+  sequence: number;
+  message: string;
+};
+
+function defaultContentView(resume: Resume): ContentViewState {
+  return {
+    section: "personal",
+    selectedExperienceId: resume.experience[0]?.id ?? null,
+  };
+}
+
+function reconcileContentView(
+  resume: Resume,
+  stored: ContentViewState | undefined,
+): ContentViewState {
+  const fallback = defaultContentView(resume);
+  if (!stored) return fallback;
+  return {
+    ...stored,
+    selectedExperienceId: resume.experience.some(
+      (entry) => entry.id === stored.selectedExperienceId,
+    )
+      ? stored.selectedExperienceId
+      : fallback.selectedExperienceId,
+  };
+}
 
 function App() {
   const {
@@ -73,7 +111,7 @@ function App() {
     flush,
     reload,
   } = useWorkspace();
-  const [tab, setTab] = useState<Tab>("content");
+  const [tab, setTab] = useState<WorkspaceMode>("content");
   const [library, setLibrary] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -93,10 +131,24 @@ function App() {
   const [aprFeedback, setAprFeedback] = useState("");
   const [aprRefineConsent, setAprRefineConsent] = useState(false);
   const [undo, setUndo] = useState<Resume | null>(null);
+  const [contentViews, setContentViews] = useState<
+    Record<string, ContentViewState>
+  >({});
+  const [contentRemoval, setContentRemoval] = useState<ContentRemoval | null>(
+    null,
+  );
+  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(
+    null,
+  );
+  const [contentFocusTarget, setContentFocusTarget] = useState<string | null>(
+    null,
+  );
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showTools, setShowTools] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
+  const previewScroll = useRef<HTMLDivElement>(null);
+  const contentStatusSequence = useRef(0);
   const resume = workspace?.resumes.find(
     (item) => item.id === workspace.activeResumeId,
   );
@@ -118,6 +170,14 @@ function App() {
   const report = (error: unknown) =>
     setNotice({ kind: "error", text: errorMessage(error) });
 
+  function announceContentStatus(message: string) {
+    contentStatusSequence.current += 1;
+    setContentStatus({
+      sequence: contentStatusSequence.current,
+      message,
+    });
+  }
+
   async function refreshCopilot() {
     setBusy("status");
     try {
@@ -133,7 +193,26 @@ function App() {
     void refreshCopilot();
   }, []);
 
-  function changeResume(next: Resume) {
+  useEffect(() => {
+    if (!contentRemoval) return;
+    const remaining = Math.max(0, contentRemoval.expiresAt - Date.now());
+    const timer = window.setTimeout(() => setContentRemoval(null), remaining);
+    return () => window.clearTimeout(timer);
+  }, [contentRemoval]);
+
+  useEffect(() => {
+    if (resume && previewScroll.current) previewScroll.current.scrollTop = 0;
+  }, [resume?.id]);
+
+  function selectWorkspaceMode(next: WorkspaceMode, focusTab = false) {
+    setTab(next);
+    if (!focusTab) return;
+    const tabElement = document.getElementById(`tab-${next}`);
+    tabElement?.focus();
+    tabElement?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }
+
+  function commitResume(next: Resume) {
     update((current) => ({
       ...current,
       resumes: current.resumes.map((item) =>
@@ -142,7 +221,176 @@ function App() {
           : item,
       ),
     }));
+  }
+
+  function changeResume(next: Resume) {
+    commitResume(next);
     setUndo(null);
+    setContentRemoval(null);
+  }
+
+  function changeContentView(next: ContentViewState) {
+    if (
+      resume &&
+      next.selectedExperienceId !==
+        reconcileContentView(resume, contentViews[resume.id])
+          .selectedExperienceId
+    ) {
+      resetApr();
+    }
+    if (!resume) return;
+    setContentViews((current) => ({ ...current, [resume.id]: next }));
+  }
+
+  function removeContentItem(request: ContentRemovalRequest) {
+    if (!resume) return;
+    let next: Resume = resume;
+    let focusTarget: string | null = null;
+
+    if (request.kind === "experience") {
+      const experience = resume.experience.filter(
+        (entry) => entry.id !== request.item.id,
+      );
+      const selected =
+        experience[Math.min(request.index, experience.length - 1)] ?? null;
+      next = { ...resume, experience };
+      setContentViews((current) => ({
+        ...current,
+        [resume.id]: {
+          ...reconcileContentView(resume, current[resume.id]),
+          section: "experience",
+          selectedExperienceId: selected?.id ?? null,
+        },
+      }));
+      focusTarget = selected
+        ? `experience-summary-${selected.id}`
+        : "add-experience";
+      resetApr();
+    } else if (request.kind === "education") {
+      const education = resume.education.filter(
+        (entry) => entry.id !== request.item.id,
+      );
+      const nextEntry =
+        education[Math.min(request.index, education.length - 1)] ?? null;
+      next = { ...resume, education };
+      focusTarget = nextEntry ? `education-${nextEntry.id}` : "add-education";
+    } else {
+      const parent = resume.experience.find(
+        (entry) => entry.id === request.parentExperienceId,
+      );
+      if (!parent) {
+        report(
+          new Error("The experience for this highlight no longer exists."),
+        );
+        return;
+      }
+      const bullets = parent.bullets.filter(
+        (_, index) => index !== request.index,
+      );
+      next = {
+        ...resume,
+        experience: resume.experience.map((entry) =>
+          entry.id === parent.id ? { ...entry, bullets } : entry,
+        ),
+      };
+      const nextIndex =
+        bullets.length > 0 ? Math.min(request.index, bullets.length - 1) : -1;
+      focusTarget =
+        nextIndex >= 0
+          ? `highlight-${parent.id}-${nextIndex}`
+          : `add-highlight-${parent.id}`;
+      resetApr();
+    }
+
+    commitResume(next);
+    setUndo(null);
+    setContentRemoval({
+      ...request,
+      resumeId: resume.id,
+      expiresAt: Date.now() + 8_000,
+    });
+    announceContentStatus(`Removed ${request.label}.`);
+    setContentFocusTarget(focusTarget);
+  }
+
+  function undoContentRemoval() {
+    if (!resume || !contentRemoval || contentRemoval.resumeId !== resume.id) {
+      setContentRemoval(null);
+      return;
+    }
+    selectWorkspaceMode("content");
+    let next: Resume = resume;
+    let focusTarget: string | null = null;
+
+    if (contentRemoval.kind === "experience") {
+      const experience = [...resume.experience];
+      experience.splice(
+        Math.min(contentRemoval.index, experience.length),
+        0,
+        contentRemoval.item as Experience,
+      );
+      next = { ...resume, experience };
+      setContentViews((current) => ({
+        ...current,
+        [resume.id]: {
+          ...reconcileContentView(resume, current[resume.id]),
+          section: "experience",
+          selectedExperienceId: contentRemoval.item.id,
+        },
+      }));
+      focusTarget = `experience-summary-${contentRemoval.item.id}`;
+    } else if (contentRemoval.kind === "education") {
+      const education = [...resume.education];
+      education.splice(
+        Math.min(contentRemoval.index, education.length),
+        0,
+        contentRemoval.item as Education,
+      );
+      next = { ...resume, education };
+      setContentViews((current) => ({
+        ...current,
+        [resume.id]: {
+          ...reconcileContentView(resume, current[resume.id]),
+          section: "education",
+        },
+      }));
+      focusTarget = `education-${contentRemoval.item.id}`;
+    } else {
+      const parent = resume.experience.find(
+        (entry) => entry.id === contentRemoval.parentExperienceId,
+      );
+      if (!parent) {
+        setContentRemoval(null);
+        report(
+          new Error("The experience for this highlight no longer exists."),
+        );
+        return;
+      }
+      const bullets = [...parent.bullets];
+      const restoredIndex = Math.min(contentRemoval.index, bullets.length);
+      bullets.splice(restoredIndex, 0, contentRemoval.item);
+      next = {
+        ...resume,
+        experience: resume.experience.map((entry) =>
+          entry.id === parent.id ? { ...entry, bullets } : entry,
+        ),
+      };
+      setContentViews((current) => ({
+        ...current,
+        [resume.id]: {
+          ...reconcileContentView(resume, current[resume.id]),
+          section: "experience",
+          selectedExperienceId: parent.id,
+        },
+      }));
+      focusTarget = `highlight-${parent.id}-${restoredIndex}`;
+    }
+
+    commitResume(next);
+    setUndo(null);
+    setContentRemoval(null);
+    announceContentStatus(`Restored ${contentRemoval.label}.`);
+    setContentFocusTarget(focusTarget);
   }
 
   function selectResume(id: string) {
@@ -152,6 +400,7 @@ function App() {
     setConsent(false);
     setAprConsent(false);
     setUndo(null);
+    setContentRemoval(null);
   }
 
   function addResume(next = createResume()) {
@@ -169,9 +418,10 @@ function App() {
       resumes: [...current.resumes, next],
     }));
     setLibrary(false);
-    setTab("content");
+    selectWorkspaceMode("content");
     setSuggestion(null);
     setUndo(null);
+    setContentRemoval(null);
     setConsent(false);
     resetApr();
   }
@@ -469,6 +719,12 @@ function App() {
     setConsent(false);
     resetApr();
     setUndo(null);
+    setContentRemoval(null);
+    setContentViews((current) => {
+      const next = { ...current };
+      delete next[deleteId];
+      return next;
+    });
   }
 
   if (!workspace || !resume) {
@@ -501,6 +757,7 @@ function App() {
   const readiness = resumeReadiness(resume);
   const completed = readiness.filter((item) => item.complete).length;
   const allBusy = blocked || exporting;
+  const contentView = reconcileContentView(resume, contentViews[resume.id]);
 
   return (
     <div className="app-shell">
@@ -880,197 +1137,230 @@ function App() {
               </div>
             </div>
             <div className="studio">
-              <div className="edit-pane">
-                <div
-                  className="editor-tabs"
-                  role="tablist"
-                  aria-label="Resume tools"
-                >
-                  {(
-                    [
-                      { id: "content", label: "Content", Icon: FileText },
-                      { id: "copilot", label: "Copilot", Icon: Sparkles },
-                      { id: "style", label: "Design", Icon: LayoutTemplate },
-                    ] as const
-                  ).map(({ id, label, Icon }) => (
-                    <button
-                      key={id}
-                      id={`tab-${id}`}
-                      role="tab"
-                      aria-controls={`panel-${id}`}
-                      aria-selected={tab === id}
-                      tabIndex={tab === id ? 0 : -1}
-                      disabled={blocked}
-                      onClick={() => setTab(id)}
-                      onKeyDown={(event) => {
-                        const tabs: Tab[] = ["content", "copilot", "style"];
-                        const direction =
-                          event.key === "ArrowRight"
-                            ? 1
-                            : event.key === "ArrowLeft"
-                              ? -1
-                              : 0;
-                        if (direction) {
-                          event.preventDefault();
-                          const next =
-                            tabs[
-                              (tabs.indexOf(tab) + direction + tabs.length) %
-                                tabs.length
-                            ];
-                          setTab(next);
-                          document.getElementById(`tab-${next}`)?.focus();
-                        }
-                      }}
-                    >
-                      <Icon size={15} />
-                      {label}
-                    </button>
-                  ))}
+              <div
+                className="workspace-tabs"
+                role="tablist"
+                aria-label="Resume workspace"
+              >
+                {(
+                  [
+                    { id: "content", label: "Content", Icon: FileText },
+                    { id: "copilot", label: "Copilot", Icon: Sparkles },
+                    { id: "style", label: "Design", Icon: LayoutTemplate },
+                    { id: "preview", label: "Preview", Icon: Eye },
+                  ] as const
+                ).map(({ id, label, Icon }) => (
+                  <button
+                    key={id}
+                    id={`tab-${id}`}
+                    role="tab"
+                    aria-controls={`panel-${id}`}
+                    aria-selected={tab === id}
+                    tabIndex={tab === id ? 0 : -1}
+                    disabled={blocked}
+                    onClick={() => selectWorkspaceMode(id)}
+                    onKeyDown={(event) => {
+                      const tabs: WorkspaceMode[] = [
+                        "content",
+                        "copilot",
+                        "style",
+                        "preview",
+                      ];
+                      const currentIndex = tabs.indexOf(id);
+                      const nextIndex =
+                        event.key === "ArrowRight"
+                          ? (currentIndex + 1) % tabs.length
+                          : event.key === "ArrowLeft"
+                            ? (currentIndex - 1 + tabs.length) % tabs.length
+                            : event.key === "Home"
+                              ? 0
+                              : event.key === "End"
+                                ? tabs.length - 1
+                                : -1;
+                      if (nextIndex >= 0) {
+                        event.preventDefault();
+                        selectWorkspaceMode(tabs[nextIndex], true);
+                      }
+                    }}
+                  >
+                    <Icon size={15} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {contentRemoval?.resumeId === resume.id && (
+                <div className="content-undo">
+                  <span>Removed {contentRemoval.label}.</span>
+                  <button className="text-button" onClick={undoContentRemoval}>
+                    Undo
+                  </button>
                 </div>
-                <div className="editor-scroll">
-                  {tab === "content" && (
-                    <div
-                      role="tabpanel"
-                      id="panel-content"
-                      aria-labelledby="tab-content"
-                    >
-                      <Editor
-                        resume={resume}
-                        onChange={changeResume}
-                        onAi={() => setTab("copilot")}
-                        onExample={() => addResume(exampleResume())}
-                        highlightGuidance={{
-                          target: aprTarget,
-                          onSelect: selectAccomplishment,
-                          consent: aprConsent,
-                          onConsent: setAprConsent,
-                          onAnalyze: () => void analyzeApr(),
-                          analysis: aprSuggestion?.value ?? null,
-                          stale:
-                            aprTarget !== null &&
-                            !aprSourceIsCurrent(aprTarget),
-                          onApply: applyAprSuggestion,
-                          selectedOption: aprSelectedOption,
-                          onSelectOption: setAprSelectedOption,
-                          onKeep: resetApr,
-                          feedback: aprFeedback,
-                          onFeedback: (value) => {
-                            setAprFeedback(value);
-                            setAprRefineConsent(false);
-                          },
-                          refineConsent: aprRefineConsent,
-                          onRefineConsent: setAprRefineConsent,
-                          onRefine: () => void refineApr(),
-                          status: copilot,
-                          busy,
+              )}
+              <span
+                className="sr-only"
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {contentStatus && (
+                  <span key={contentStatus.sequence}>
+                    {contentStatus.message}
+                  </span>
+                )}
+              </span>
+              <div className="workspace-panels">
+                <div
+                  className="workspace-panel content-panel"
+                  role="tabpanel"
+                  id="panel-content"
+                  aria-labelledby="tab-content"
+                  hidden={tab !== "content"}
+                >
+                  <Editor
+                    resume={resume}
+                    onChange={changeResume}
+                    onAi={() => selectWorkspaceMode("copilot", true)}
+                    onExample={() => addResume(exampleResume())}
+                    viewState={contentView}
+                    onViewStateChange={changeContentView}
+                    onRemove={removeContentItem}
+                    focusTarget={contentFocusTarget}
+                    onFocusTargetHandled={() => setContentFocusTarget(null)}
+                    highlightGuidance={{
+                      target: aprTarget,
+                      onSelect: selectAccomplishment,
+                      consent: aprConsent,
+                      onConsent: setAprConsent,
+                      onAnalyze: () => void analyzeApr(),
+                      analysis: aprSuggestion?.value ?? null,
+                      stale:
+                        aprTarget !== null && !aprSourceIsCurrent(aprTarget),
+                      onApply: applyAprSuggestion,
+                      selectedOption: aprSelectedOption,
+                      onSelectOption: setAprSelectedOption,
+                      onKeep: resetApr,
+                      feedback: aprFeedback,
+                      onFeedback: (value) => {
+                        setAprFeedback(value);
+                        setAprRefineConsent(false);
+                      },
+                      refineConsent: aprRefineConsent,
+                      onRefineConsent: setAprRefineConsent,
+                      onRefine: () => void refineApr(),
+                      status: copilot,
+                      busy,
+                    }}
+                  />
+                </div>
+                <div
+                  className="workspace-panel tool-panel-scroll"
+                  role="tabpanel"
+                  id="panel-copilot"
+                  aria-labelledby="tab-copilot"
+                  hidden={tab !== "copilot"}
+                >
+                  <fieldset
+                    className="assistant-fieldset"
+                    disabled={busy === "generate" || busy === "analyze"}
+                  >
+                    <CopilotPanel
+                      resume={resume}
+                      onChange={changeResume}
+                      status={copilot}
+                      busy={busy}
+                      consent={consent}
+                      onConsent={setConsent}
+                      onRefresh={() => void refreshCopilot()}
+                      onLogin={() => void login()}
+                      onGenerate={() => void generate()}
+                      proposal={suggestion?.value ?? null}
+                      stale={
+                        suggestion !== null &&
+                        suggestion.source !== JSON.stringify(resume)
+                      }
+                      onApply={applySuggestions}
+                      onDiscard={() => setSuggestion(null)}
+                    />
+                  </fieldset>
+                </div>
+                <div
+                  className="workspace-panel tool-panel-scroll"
+                  role="tabpanel"
+                  id="panel-style"
+                  aria-labelledby="tab-style"
+                  hidden={tab !== "style"}
+                >
+                  <StylePanel resume={resume} onChange={changeResume} />
+                </div>
+                <div
+                  className="workspace-panel preview-pane"
+                  role="tabpanel"
+                  id="panel-preview"
+                  aria-labelledby="tab-preview"
+                  hidden={tab !== "preview"}
+                >
+                  <div className="preview-toolbar">
+                    <span>
+                      <span className="live-dot" /> LIVE PREVIEW
+                    </span>
+                    <span>
+                      A4 <span className="toolbar-divider">/</span>{" "}
+                      {resume.template === "editorial" ? "Editorial" : "Modern"}{" "}
+                      <button
+                        className="text-button"
+                        disabled={blocked}
+                        onClick={() => selectWorkspaceMode("style", true)}
+                      >
+                        Change
+                      </button>
+                    </span>
+                  </div>
+                  <div className="paper-scroll" ref={previewScroll}>
+                    <ResumePreview resume={resume} />
+                    <p className="preview-caption">
+                      <ShieldCheck size={13} /> Selectable text. Clean layout.
+                      No watermarks.
+                    </p>
+                  </div>
+                  <div className="readiness-bar">
+                    <div className="readiness-heading">
+                      <span>
+                        <CheckCircle2 size={17} />
+                        <strong>Resume essentials</strong>
+                      </span>
+                      <span>
+                        {completed} of {readiness.length} ready
+                      </span>
+                    </div>
+                    <div className="readiness-track">
+                      <span
+                        style={{
+                          width: `${(completed / readiness.length) * 100}%`,
                         }}
                       />
                     </div>
-                  )}
-                  {tab === "copilot" && (
-                    <div
-                      role="tabpanel"
-                      id="panel-copilot"
-                      aria-labelledby="tab-copilot"
-                    >
-                      <fieldset
-                        className="assistant-fieldset"
-                        disabled={busy === "generate" || busy === "analyze"}
-                      >
-                        <CopilotPanel
-                          resume={resume}
-                          onChange={changeResume}
-                          status={copilot}
-                          busy={busy}
-                          consent={consent}
-                          onConsent={setConsent}
-                          onRefresh={() => void refreshCopilot()}
-                          onLogin={() => void login()}
-                          onGenerate={() => void generate()}
-                          proposal={suggestion?.value ?? null}
-                          stale={
-                            suggestion !== null &&
-                            suggestion.source !== JSON.stringify(resume)
-                          }
-                          onApply={applySuggestions}
-                          onDiscard={() => setSuggestion(null)}
-                        />
-                      </fieldset>
+                    <div className="readiness-items">
+                      {readiness.map((item) => (
+                        <span
+                          key={item.label}
+                          className={item.complete ? "complete" : ""}
+                          title={item.label}
+                        >
+                          {item.complete ? (
+                            <Check size={11} />
+                          ) : (
+                            <Circle size={9} />
+                          )}
+                          {item.label}
+                        </span>
+                      ))}
                     </div>
-                  )}
-                  {tab === "style" && (
-                    <div
-                      role="tabpanel"
-                      id="panel-style"
-                      aria-labelledby="tab-style"
-                    >
-                      <StylePanel resume={resume} onChange={changeResume} />
-                    </div>
-                  )}
-                </div>
-                <div className="editor-footer">
-                  <LockKeyhole size={12} /> No account needed to create, save,
-                  or export.
+                  </div>
                 </div>
               </div>
-              <div className="preview-pane">
-                <div className="preview-toolbar">
-                  <span>
-                    <span className="live-dot" /> LIVE PREVIEW
-                  </span>
-                  <span>
-                    A4 <span className="toolbar-divider">/</span>{" "}
-                    {resume.template === "editorial" ? "Editorial" : "Modern"}{" "}
-                    <button
-                      className="text-button"
-                      disabled={blocked}
-                      onClick={() => setTab("style")}
-                    >
-                      Change
-                    </button>
-                  </span>
-                </div>
-                <div className="paper-scroll">
-                  <ResumePreview resume={resume} />
-                  <p className="preview-caption">
-                    <ShieldCheck size={13} /> Selectable text. Clean layout. No
-                    watermarks.
-                  </p>
-                </div>
-                <div className="readiness-bar">
-                  <div className="readiness-heading">
-                    <span>
-                      <CheckCircle2 size={17} />
-                      <strong>Resume essentials</strong>
-                    </span>
-                    <span>
-                      {completed} of {readiness.length} ready
-                    </span>
-                  </div>
-                  <div className="readiness-track">
-                    <span
-                      style={{
-                        width: `${(completed / readiness.length) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="readiness-items">
-                    {readiness.map((item) => (
-                      <span
-                        key={item.label}
-                        className={item.complete ? "complete" : ""}
-                        title={item.label}
-                      >
-                        {item.complete ? (
-                          <Check size={11} />
-                        ) : (
-                          <Circle size={9} />
-                        )}
-                        {item.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+              <div className="editor-footer">
+                <LockKeyhole size={12} /> No account needed to create, save, or
+                export.
               </div>
             </div>
           </section>

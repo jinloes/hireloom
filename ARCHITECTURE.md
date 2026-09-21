@@ -51,13 +51,17 @@ a picker value.
 
 `src/App.tsx` owns top-level UI state and user workflows: document management,
 backup import/export, PDF generation, Copilot status/login/generation, proposal
-review, transient direct inline highlight guidance, stale-result checks, and
+review, per-resume transient Content navigation and selected Experience state,
+transient workspace mode and Preview scroll state, bounded item-removal
+recovery, transient direct inline highlight guidance, stale-result checks, and
 one-step AI undo.
 
 Focused components remain controlled by `App`:
 
-- `Editor` emits updated resume values and places guidance under the active
-  nonempty highlight.
+- `Editor` renders visible peer tabs with one selected Content section, emits
+  updated resume values and typed item-removal requests, presents a responsive
+  Experience summary/master-detail view with one selected editor, and places
+  guidance under the active nonempty highlight.
 - `HighlightGuidance` renders the bounded disclosure, feedback, accessible
   fixed-strategy option selection, and explicit apply or keep controls.
 - `StylePanel` emits template/accent changes.
@@ -65,6 +69,16 @@ Focused components remain controlled by `App`:
   call native APIs itself.
 - `ResumePreview` renders the continuous screen representation.
 - `ResumeDocument` is dynamically imported only for PDF export.
+
+The studio shell exposes Content, Copilot, Design, and Preview as one labeled
+top-level tablist. One full-width panel is exposed at a time; inactive panels
+remain mounted with the native `hidden` attribute so they leave the
+accessibility tree without losing transient same-resume state. Content has its
+own separately labeled tablist for Personal, Summary, Experience, Education,
+and Skills. Both tab tiers use automatic local activation with roving focus,
+Left/Right wrapping, and Home/End navigation. The tablists and item-removal Undo
+remain outside panel scrolling, while each active mode owns one bounded vertical
+scroll surface.
 
 ### Persistence
 
@@ -222,6 +236,18 @@ field change
   -> visible saved/error state
 ```
 
+Content section and selected Experience state are keyed by resume ID in React
+memory. The selected top-level workspace mode and same-resume Preview scroll are
+also transient UI state; changing resumes resets Preview scroll safely. None of
+these values enters the workspace schema, backups, localStorage, or native IPC.
+Removing a job, education entry, or highlight stores only that exact item, its
+original index, and its parent identity where applicable for eight seconds.
+Undo remains available across workspace and Content tab switches, returns to
+the relevant Content target, reinserts the item into the current controlled
+resume, and autosaves the restoration normally. Any later resume-data edit
+clears the pending item recovery. This item-level record is separate from the
+existing whole-resume snapshot used to undo an applied AI suggestion.
+
 ### Backup import
 
 ```text
@@ -303,13 +329,17 @@ activate help under one nonempty highlight
 ## Verification strategy
 
 - Vitest covers domain invariants and React workflows with mocked platform APIs,
-  including guidance consent, canonical option shape, explicit no-default
-  selection, staleness, failure preservation,
-  atomic split order/cap, and exact undo.
+  including both tab tiers and focus, current Preview data, stable Experience
+  selection, cross-mode item-removal timing/restoration, guidance consent,
+  canonical option shape, explicit no-default selection, staleness, failure
+  preservation, atomic split order/cap, and exact AI undo.
 - Rust unit tests cover native validation, atomic writes, prompt redaction,
   process isolation flags, bounded execution, and malformed responses.
 - Playwright exercises the browser adapter in Chromium and WebKit, including
-  the desktop-only inline guidance negative control, local editing, persistence, recovery,
+  exact-size and zoom-equivalent full-width workspace geometry, both tab tiers,
+  active-panel and same-resume scroll preservation, responsive Experience
+  master-detail editing, cross-mode item-removal recovery, the desktop-only
+  inline guidance negative control, local editing, persistence, recovery,
   imports, document management, and ATS-relevant PDF heading,
   text-preservation, and single-column extraction-order checks.
 - GitHub Actions runs frontend checks and native checks across macOS, Windows,
