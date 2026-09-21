@@ -42,8 +42,8 @@ connect to Copilot. It does not read your desktop workspace.
 - JSON workspace backups and validated, non-destructive imports.
 - Job-description keyword overlap and a transparent resume-essentials checklist.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
-  review, multiple fact-bound highlight options, stale-result protection, and
-  one-step undo until the next edit.
+  review, multiple fact-bound highlight options, a resume-wide weak-highlight
+  review, stale-result protection, and one-step undo until the next edit.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details or click **try a fictional example**. The example
@@ -139,9 +139,24 @@ reordering makes the result stale and blocks apply. CLI, timeout,
 malformed-output, and other request failures keep the current guidance,
 selection, and resume unchanged while showing an error.
 
-In the browser preview, inline help remains discoverable but clearly reports
-that guidance is desktop-only. Its consent and send controls are disabled while
-the highlight remains locally editable.
+### Reviewing every highlight at once
+
+The Experience section offers **Review all highlights**, a single diagnosis-only
+request that checks the whole active resume instead of one bullet at a time. A
+separate, initially unchecked consent is required each time, and it sends every
+nonempty highlight and its role in one request; no rewrite text is returned.
+
+Each flagged highlight gains an inline badge naming the weak components in
+words, such as _Weak result_. Highlights whose Action, Project, and Result are
+all clear get no badge. The review never changes, applies, or saves resume
+content, and the verdicts are not persisted: editing, removing, or reordering a
+highlight, or switching resumes, clears its badge. A resume whose assembled
+request would exceed the prompt size limit is refused with an actionable message
+instead of being truncated or reviewed in parts.
+
+In the browser preview, inline help and **Review all highlights** remain
+discoverable but clearly report that they are desktop-only. Their consent and
+send controls are disabled while the highlights remain locally editable.
 
 ## Privacy and storage
 
@@ -156,6 +171,8 @@ the highlight remains locally editable.
 - Whole-resume AI requests send the summary, work history, education, skills,
   professional headline, and job description to GitHub Copilot. Inline
   highlight guidance requests send only the selected highlight and its role.
+  A resume-wide highlight review sends every nonempty highlight and its role in
+  one consented request and returns only weak/clear verdicts, never rewrites.
   Dedicated name, email, phone, personal location, website, GitHub,
   diagnostics/initial rewrite, other resume fields, and local correlation IDs
   are excluded. **Anything you type into free text can still contain

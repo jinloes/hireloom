@@ -121,8 +121,10 @@ export const aprTargetSchema = z.strictObject({
   bullet: aprNonemptyText,
 });
 
+export const aprStatusSchema = z.enum(["clear", "partial", "missing"]);
+
 export const aprDimensionSchema = z.strictObject({
-  status: z.enum(["clear", "partial", "missing"]),
+  status: aprStatusSchema,
   feedback: aprNonemptyText,
 });
 
@@ -231,6 +233,15 @@ export const aprRefinementSchema = z
     });
   });
 
+export const highlightReviewSchema = z.strictObject({
+  target: aprTargetSchema,
+  action: aprStatusSchema,
+  project: aprStatusSchema,
+  result: aprStatusSchema,
+});
+
+export const highlightReviewsSchema = z.array(highlightReviewSchema).max(900);
+
 export type Resume = z.infer<typeof resumeSchema>;
 export type Experience = Resume["experience"][number];
 export type Education = Resume["education"][number];
@@ -242,6 +253,9 @@ export type AprOptionId = z.infer<typeof aprOptionIdSchema>;
 export type AprOption = z.infer<typeof aprOptionSchema>;
 export type AprAnalysis = z.infer<typeof aprAnalysisSchema>;
 export type AprRefinement = z.infer<typeof aprRefinementSchema>;
+export type AprStatus = z.infer<typeof aprStatusSchema>;
+export type HighlightReview = z.infer<typeof highlightReviewSchema>;
+export type HighlightReviews = z.infer<typeof highlightReviewsSchema>;
 
 export const MAX_WORKSPACE_BYTES = 2 * 1024 * 1024;
 export const accents = {
@@ -441,6 +455,32 @@ export function validateAprAnalysis(
     );
   }
   return analysis;
+}
+
+export function validateHighlightReviews(
+  value: unknown,
+  expectedTargets: AprTarget[],
+): HighlightReviews {
+  const reviews = highlightReviewsSchema.parse(value);
+  const mismatch = new Error(
+    "Copilot returned a review for different highlights. Nothing has been changed.",
+  );
+  if (reviews.length !== expectedTargets.length) {
+    throw mismatch;
+  }
+  reviews.forEach((review, index) => {
+    const expected = expectedTargets[index];
+    if (
+      review.target.resumeId !== expected.resumeId ||
+      review.target.experienceId !== expected.experienceId ||
+      review.target.bulletIndex !== expected.bulletIndex ||
+      review.target.role !== expected.role ||
+      review.target.bullet !== expected.bullet
+    ) {
+      throw mismatch;
+    }
+  });
+  return reviews;
 }
 
 export function applyAprOption(

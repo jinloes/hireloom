@@ -116,6 +116,7 @@ browser behavior. Its desktop methods invoke:
 | `generate_resume`        | React to Rust | Validated, non-applied AI proposal                          |
 | `analyze_accomplishment` | React to Rust | Validated transient APR feedback and direct rewrite options |
 | `refine_accomplishment`  | React to Rust | Feedback-guided replacement APR option set                  |
+| `review_highlights`      | React to Rust | One batched, diagnosis-only APR verdict per sent highlight  |
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.
@@ -166,6 +167,17 @@ AI is an opt-in editing aid, not an autonomous actor:
     original experience IDs.
 13. React validates the proposal again, displays it for review, rejects stale
     proposals, and applies only summary and experience bullets.
+
+Resume-wide highlight review reuses the same APR contract, isolation, model
+route, and generation lock, but is diagnosis-only and batched. One consented
+request carries every nonempty highlight of the active resume as indexed role
+and bullet text. Rust rejects an oversized assembled prompt before any Copilot
+contact instead of truncating or chunking, requires exactly one verdict per
+requested index with no duplicates or unknown indexes, and rebinds verdicts to
+the unchanged local targets. The response carries no rewrite text, and a
+completed review never changes or persists resume content; React holds the
+verdicts as transient session state and drops a badge as soon as its source
+highlight changes.
 
 Inline highlight guidance uses the existing internal APR contract, isolation,
 and generation lock but presents it under the selected Experience highlight.
@@ -303,6 +315,24 @@ activate help under one nonempty highlight
   -> optional feedback + separate consented refinement request
   -> replace options only after a valid refined response
   -> atomic one/two-bullet apply + exact prior-resume undo snapshot
+```
+
+### Resume-wide highlight review
+
+```text
+consent once in the Experience section
+  -> collect every nonempty highlight of the active resume
+  -> platform.reviewHighlights (desktop + consent guards)
+  -> Rust target validation + isolated shared Copilot runner
+  -> explicit gemini-3.8-flash route with no fallback
+  -> one batched prompt of index, role, and bullet only
+  -> actionable rejection when the prompt exceeds MAX_PROMPT_BYTES,
+     with no truncation, chunking, or partial scan
+  -> strict response: exactly one Action/Project/Result verdict per index
+  -> local rebinding to the exact requested targets
+  -> inline text badges naming each weak component
+  -> badges cleared by any edit, removal, reorder, or resume switch
+  -> no rewrite text, no resume change, nothing persisted
 ```
 
 ## Trust boundaries and invariants

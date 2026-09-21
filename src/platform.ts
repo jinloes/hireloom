@@ -4,12 +4,14 @@ import {
   type AprRefinement,
   type AprTarget,
   type AiProposal,
+  type HighlightReviews,
   type Resume,
   type Workspace,
   MAX_WORKSPACE_BYTES,
   parseWorkspace,
   validateAprAnalysis,
   validateAprTarget,
+  validateHighlightReviews,
   validateProposal,
   aprRefinementSchema,
   workspaceSchema,
@@ -116,6 +118,27 @@ export async function analyzeAccomplishment(
       consent,
     }),
     validTarget,
+  );
+}
+
+export async function reviewHighlights(
+  targets: AprTarget[],
+  consent: boolean,
+): Promise<HighlightReviews> {
+  if (!desktop) throw new Error("Highlight review requires the desktop app.");
+  if (!consent)
+    throw new Error(
+      "Confirm that you want to send these highlights to GitHub Copilot.",
+    );
+  const validTargets = targets.map((target) => validateAprTarget(target));
+  if (validTargets.length === 0)
+    throw new Error("Add at least one highlight before requesting a review.");
+  return validateHighlightReviews(
+    await invoke<unknown>("review_highlights", {
+      targets: validTargets,
+      consent,
+    }),
+    validTargets,
   );
 }
 

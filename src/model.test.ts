@@ -14,6 +14,7 @@ import {
   validateProposal,
   validateAprAnalysis,
   validateAprTarget,
+  validateHighlightReviews,
   type Resume,
 } from "./model";
 
@@ -291,6 +292,80 @@ describe("AI proposals", () => {
           bullets: ["First.", "Second."],
         }),
       ).toThrow("30-highlight");
+    });
+
+    it("binds batch highlight reviews to the exact requested highlights", () => {
+      const resume = exampleResume();
+      const targets = resume.experience.flatMap((entry) =>
+        entry.bullets.map((bullet, bulletIndex) => ({
+          resumeId: resume.id,
+          experienceId: entry.id,
+          bulletIndex,
+          role: entry.role,
+          bullet,
+        })),
+      );
+      const reviews = targets.map((target, index) => ({
+        target,
+        action: index % 2 === 0 ? ("clear" as const) : ("partial" as const),
+        project: "partial" as const,
+        result: "missing" as const,
+      }));
+
+      expect(validateHighlightReviews(reviews, targets)).toEqual(reviews);
+
+      // Diagnosis only: rewrite text, feedback prose and unknown keys are rejected.
+      expect(() =>
+        validateHighlightReviews(
+          [
+            { ...reviews[0], feedback: "Add supported impact." },
+            ...reviews.slice(1),
+          ],
+          targets,
+        ),
+      ).toThrow();
+      expect(() =>
+        validateHighlightReviews(
+          [
+            {
+              ...reviews[0],
+              options: [{ id: "concise", bullets: ["A rewrite."] }],
+            },
+            ...reviews.slice(1),
+          ],
+          targets,
+        ),
+      ).toThrow();
+      expect(() =>
+        validateHighlightReviews(
+          [{ ...reviews[0], action: "strong" }, ...reviews.slice(1)],
+          targets,
+        ),
+      ).toThrow();
+
+      // Count and per-highlight identity mismatches are refused, never guessed.
+      expect(() => validateHighlightReviews(reviews.slice(1), targets)).toThrow(
+        "different highlights",
+      );
+      expect(() =>
+        validateHighlightReviews([...reviews, reviews[0]], targets),
+      ).toThrow("different highlights");
+      expect(() =>
+        validateHighlightReviews(
+          [
+            {
+              ...reviews[0],
+              target: { ...targets[0], bullet: "An edited highlight." },
+            },
+            ...reviews.slice(1),
+          ],
+          targets,
+        ),
+      ).toThrow("different highlights");
+      expect(() =>
+        validateHighlightReviews([...reviews].reverse(), targets),
+      ).toThrow("different highlights");
+      expect(validateHighlightReviews([], [])).toEqual([]);
     });
   });
 

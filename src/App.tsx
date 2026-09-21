@@ -40,6 +40,8 @@ import {
   type AiProposal,
   type Education,
   type Experience,
+  type HighlightReview,
+  type HighlightReviews,
   type Resume,
 } from "./model";
 import {
@@ -50,6 +52,7 @@ import {
   generateResume,
   loginToCopilot,
   refineAccomplishment,
+  reviewHighlights,
   type CopilotStatus,
 } from "./platform";
 import { useWorkspace } from "./useWorkspace";
@@ -117,7 +120,7 @@ function App() {
   const [exporting, setExporting] = useState(false);
   const [copilot, setCopilot] = useState<CopilotStatus | null>(null);
   const [busy, setBusy] = useState<
-    "status" | "login" | "generate" | "analyze" | "refine" | null
+    "status" | "login" | "generate" | "analyze" | "refine" | "review" | null
   >(null);
   const [consent, setConsent] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
@@ -130,6 +133,10 @@ function App() {
     useState<AprOptionId | null>(null);
   const [aprFeedback, setAprFeedback] = useState("");
   const [aprRefineConsent, setAprRefineConsent] = useState(false);
+  // Batch review verdicts are transient session state and are never persisted.
+  const [reviewConsent, setReviewConsent] = useState(false);
+  const [highlightReviews, setHighlightReviews] =
+    useState<HighlightReviews | null>(null);
   const [undo, setUndo] = useState<Resume | null>(null);
   const [contentViews, setContentViews] = useState<
     Record<string, ContentViewState>
@@ -156,7 +163,13 @@ function App() {
     busy === "generate" ||
     busy === "analyze" ||
     busy === "refine" ||
+    busy === "review" ||
     busy === "login";
+  // `HighlightGuidance` and `CopilotPanel` are reference-only panels that do not
+  // know about the batch review request. Map it onto an existing truthy value so
+  // their controls stay disabled while a review runs, without widening or
+  // contradicting their own busy vocabulary.
+  const panelBusy = busy === "review" ? "status" : busy;
 
   function resetApr() {
     setAprTarget(null);
@@ -165,6 +178,11 @@ function App() {
     setAprSelectedOption(null);
     setAprFeedback("");
     setAprRefineConsent(false);
+  }
+
+  function resetHighlightReviews() {
+    setHighlightReviews(null);
+    setReviewConsent(false);
   }
 
   const report = (error: unknown) =>
@@ -401,6 +419,7 @@ function App() {
     setAprConsent(false);
     setUndo(null);
     setContentRemoval(null);
+    resetHighlightReviews();
   }
 
   function addResume(next = createResume()) {
@@ -424,6 +443,7 @@ function App() {
     setContentRemoval(null);
     setConsent(false);
     resetApr();
+    resetHighlightReviews();
   }
 
   async function exportPdf() {
@@ -500,6 +520,7 @@ function App() {
       setUndo(null);
       setConsent(false);
       resetApr();
+      resetHighlightReviews();
       setLibrary(false);
       setNotice({
         kind: "success",
@@ -672,6 +693,62 @@ function App() {
     );
   }
 
+  function highlightReviewFor(
+    experienceId: string,
+    bulletIndex: number,
+  ): HighlightReview | null {
+    if (!highlightReviews) return null;
+    const review = highlightReviews.find(
+      (entry) =>
+        entry.target.experienceId === experienceId &&
+        entry.target.bulletIndex === bulletIndex,
+    );
+    // A badge only survives while its exact source highlight is unchanged.
+    return review && aprSourceIsCurrent(review.target) ? review : null;
+  }
+
+  async function reviewAllHighlights() {
+    if (!resume) return;
+    const targets: AprTarget[] = resume.experience.flatMap((entry) =>
+      entry.bullets
+        .map((bullet, bulletIndex) => ({
+          resumeId: resume.id,
+          experienceId: entry.id,
+          bulletIndex,
+          role: entry.role,
+          bullet,
+        }))
+        .filter((target) => target.bullet.trim().length > 0),
+    );
+    if (targets.length === 0) {
+      report(
+        new Error("Add at least one highlight before requesting a review."),
+      );
+      return;
+    }
+    setBusy("review");
+    try {
+      const reviews = await reviewHighlights(targets, reviewConsent);
+      setHighlightReviews(reviews);
+      const weak = reviews.filter(
+        (review) =>
+          review.action !== "clear" ||
+          review.project !== "clear" ||
+          review.result !== "clear",
+      ).length;
+      const summary = `Reviewed ${reviews.length} highlight${
+        reviews.length === 1 ? "" : "s"
+      }. ${weak} need${weak === 1 ? "s" : ""} work. Your resume has not been changed.`;
+      setNotice({ kind: "success", text: summary });
+      announceContentStatus(summary);
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(null);
+      setReviewConsent(false);
+    }
+  }
+
   function applyAprSuggestion() {
     if (!resume || !aprSuggestion) return;
     if (!aprSourceIsCurrent(aprSuggestion.source)) {
@@ -718,6 +795,7 @@ function App() {
     setSuggestion(null);
     setConsent(false);
     resetApr();
+    resetHighlightReviews();
     setUndo(null);
     setContentRemoval(null);
     setContentViews((current) => {
@@ -1248,6 +1326,15 @@ function App() {
                       onRefineConsent: setAprRefineConsent,
                       onRefine: () => void refineApr(),
                       status: copilot,
+                      busy: panelBusy,
+                    }}
+                    highlightReview={{
+                      reviewFor: highlightReviewFor,
+                      hasReviews: highlightReviews !== null,
+                      consent: reviewConsent,
+                      onConsent: setReviewConsent,
+                      onReview: () => void reviewAllHighlights(),
+                      status: copilot,
                       busy,
                     }}
                   />
@@ -1267,7 +1354,7 @@ function App() {
                       resume={resume}
                       onChange={changeResume}
                       status={copilot}
-                      busy={busy}
+                      busy={panelBusy}
                       consent={consent}
                       onConsent={setConsent}
                       onRefresh={() => void refreshCopilot()}

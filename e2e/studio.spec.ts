@@ -736,3 +736,33 @@ test("long resumes paginate without losing text or accented names", async ({
   expect(text).toContain("Highlight 8.5:");
   expect(text).toContain("Final content marker");
 });
+
+test("offers the resume-wide highlight review but disables it in the browser preview", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await openContentSection(page, "Experience");
+  await page.getByRole("button", { name: "Add experience to end" }).click();
+  await page.getByLabel("Job title 1", { exact: true }).fill("Support lead");
+  await page.getByRole("button", { name: "Add highlight" }).click();
+  await page
+    .getByLabel("Highlight 1.1", { exact: true })
+    .fill("Answered tickets.");
+
+  const consent = page.getByRole("checkbox", {
+    name: /Send every highlight and role in this resume/,
+  });
+  const review = page.getByRole("button", {
+    name: "Review all highlights",
+    exact: true,
+  });
+  await expect(review).toBeVisible();
+  await expect(consent).toBeDisabled();
+  await expect(review).toBeDisabled();
+  await expect(
+    page.getByText(
+      "Reviewing every highlight is available only in the desktop app. You can keep editing locally.",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/^Weak /)).toHaveCount(0);
+});

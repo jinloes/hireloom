@@ -10,12 +10,40 @@ import {
   AlignLeft,
   Shapes,
   Sparkles,
+  LoaderCircle,
 } from "lucide-react";
-import type { Education, Experience, Resume } from "../model";
+import { desktop } from "../platform";
+import type { Education, Experience, HighlightReview, Resume } from "../model";
 import {
   HighlightGuidance,
   type HighlightGuidanceController,
 } from "./HighlightGuidance";
+
+export type HighlightReviewController = {
+  reviewFor: (
+    experienceId: string,
+    bulletIndex: number,
+  ) => HighlightReview | null;
+  hasReviews: boolean;
+  consent: boolean;
+  onConsent: (value: boolean) => void;
+  onReview: () => void;
+  status: { available: boolean } | null;
+  busy:
+    "status" | "login" | "generate" | "analyze" | "refine" | "review" | null;
+};
+
+const REVIEW_DIMENSIONS = [
+  { key: "action", label: "action" },
+  { key: "project", label: "project" },
+  { key: "result", label: "result" },
+] as const;
+
+function weakDimensions(review: HighlightReview): string[] {
+  return REVIEW_DIMENSIONS.filter(
+    (dimension) => review[dimension.key] !== "clear",
+  ).map((dimension) => dimension.label);
+}
 
 export type ContentSection =
   "personal" | "summary" | "experience" | "education" | "skills";
@@ -348,6 +376,7 @@ export function Editor({
   onAi,
   onExample,
   highlightGuidance,
+  highlightReview,
   viewState,
   onViewStateChange,
   onRemove,
@@ -359,6 +388,7 @@ export function Editor({
   onAi: () => void;
   onExample: () => void;
   highlightGuidance: HighlightGuidanceController;
+  highlightReview: HighlightReviewController;
   viewState: ContentViewState;
   onViewStateChange: (state: ContentViewState) => void;
   onRemove: (request: ContentRemovalRequest) => void;
@@ -612,6 +642,62 @@ export function Editor({
           {viewState.section === "experience" && (
             <div className="section-fields experience-section-fields">
               {resume.experience.length > 0 && (
+                <div className="highlight-review-action">
+                  <p className="highlight-review-intro">
+                    Ask GitHub Copilot to read every highlight in this resume
+                    and say which ones are missing a clear action, project, or
+                    result. Nothing is rewritten and nothing is changed.
+                  </p>
+                  <label className="consent-check">
+                    <input
+                      type="checkbox"
+                      checked={highlightReview.consent}
+                      onChange={(event) =>
+                        highlightReview.onConsent(event.target.checked)
+                      }
+                      disabled={highlightReview.busy === "review" || !desktop}
+                    />
+                    <span>
+                      Send every highlight and role in this resume to GitHub
+                      Copilot for this request.
+                    </span>
+                  </label>
+                  <button
+                    className="button primary"
+                    disabled={
+                      !desktop ||
+                      !highlightReview.status?.available ||
+                      !highlightReview.consent ||
+                      Boolean(highlightReview.busy)
+                    }
+                    onClick={highlightReview.onReview}
+                  >
+                    {highlightReview.busy === "review" ? (
+                      <LoaderCircle className="spin" size={16} />
+                    ) : (
+                      <Sparkles size={16} />
+                    )}
+                    {highlightReview.busy === "review"
+                      ? "Reviewing every highlight…"
+                      : highlightReview.hasReviews
+                        ? "Review all highlights again"
+                        : "Review all highlights"}
+                  </button>
+                  {!desktop && (
+                    <p className="highlight-guidance-status" role="status">
+                      Reviewing every highlight is available only in the desktop
+                      app. You can keep editing locally.
+                    </p>
+                  )}
+                  {desktop && !highlightReview.status?.available && (
+                    <p className="highlight-guidance-status" role="status">
+                      GitHub Copilot is unavailable. Check the Copilot tab while
+                      keeping your highlights editable.
+                    </p>
+                  )}
+                </div>
+              )}
+              {resume.experience.length > 0 && (
                 <div className="experience-workspace">
                   <div className="experience-summary-rail">
                     <button
@@ -791,6 +877,23 @@ export function Editor({
                           />
                           {text.trim() && (
                             <>
+                              {(() => {
+                                const review = highlightReview.reviewFor(
+                                  selectedExperience.id,
+                                  bulletIndex,
+                                );
+                                const weak = review
+                                  ? weakDimensions(review)
+                                  : [];
+                                if (weak.length === 0) return null;
+                                return (
+                                  <p className="highlight-review-badge">
+                                    <span className="apr-status partial">
+                                      Weak {weak.join(", ")}
+                                    </span>
+                                  </p>
+                                );
+                              })()}
                               <button
                                 className="text-button highlight-help-button"
                                 aria-expanded={

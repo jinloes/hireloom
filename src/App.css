@@ -1672,6 +1672,31 @@ button {
   color: #985434;
   background: #f7e5db;
 }
+.highlight-review-action {
+  border: 1px solid #dfe7d6;
+  border-radius: 8px;
+  background: #fbfdf8;
+  padding: 13px;
+  margin-bottom: 15px;
+}
+.highlight-review-intro {
+  color: #4f6248;
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 0 0 9px;
+}
+.highlight-review-badge {
+  margin: 7px 0 0;
+}
+.highlight-review-badge .apr-status {
+  display: inline-block;
+  letter-spacing: 0.04em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .highlight-review-action .spin {
+    animation: none;
+  }
+}
 .highlight-guidance-status {
   color: #65745a;
   font-size: 10px;
