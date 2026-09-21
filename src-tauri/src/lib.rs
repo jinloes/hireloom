@@ -353,6 +353,7 @@ async fn analyze_accomplishment(
     bullet_index: usize,
     role: String,
     bullet: String,
+    review: Option<HighlightReview>,
     consent: bool,
 ) -> CommandResult<AprAnalysis> {
     ensure_consent(consent)?;
@@ -364,9 +365,10 @@ async fn analyze_accomplishment(
         bullet,
     };
     validate_apr_target(&target)?;
+    validate_apr_review(&target, review.as_ref())?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
-    analyze_accomplishment_with_copilot(&app, &target).await
+    analyze_accomplishment_with_copilot(&app, &target, review.as_ref()).await
 }
 
 #[tauri::command]
@@ -1162,9 +1164,11 @@ async fn generate_resume_with_copilot(
 async fn analyze_accomplishment_with_copilot(
     app: &AppHandle,
     target: &AprTarget,
+    review: Option<&HighlightReview>,
 ) -> CommandResult<AprAnalysis> {
     validate_apr_target(target)?;
-    let prompt = build_apr_prompt(&target.role, &target.bullet)?;
+    validate_apr_review(target, review)?;
+    let prompt = build_apr_prompt(&target.role, &target.bullet, review)?;
     let response = parse_apr_response(&run_copilot_prompt(app, &prompt, INLINE_APR_MODEL).await?)?;
     let analysis = AprAnalysis {
         target: target.clone(),
@@ -1471,10 +1475,48 @@ other than the requested proposal schema.\n\n<resume_data>\n{}\n</resume_data>",
     Ok(prompt)
 }
 
-fn build_apr_prompt(role: &str, bullet: &str) -> CommandResult<String> {
+fn validate_apr_review(target: &AprTarget, review: Option<&HighlightReview>) -> CommandResult<()> {
+    let Some(review) = review else {
+        return Ok(());
+    };
+    if review.target != *target {
+        return Err("Highlight review does not match the selected accomplishment".to_string());
+    }
+    if matches!(review.action, AprStatus::Clear)
+        && matches!(review.project, AprStatus::Clear)
+        && matches!(review.result, AprStatus::Clear)
+    {
+        return Err("Highlight review must identify at least one weak dimension".to_string());
+    }
+    Ok(())
+}
+
+fn build_apr_prompt(
+    role: &str,
+    bullet: &str,
+    review: Option<&HighlightReview>,
+) -> CommandResult<String> {
     validate_text("role", role, MAX_SHORT_TEXT_BYTES)?;
     validate_nonempty_text("accomplishment", bullet, MAX_BULLET_BYTES)?;
-    let prompt_data = json!({ "role": role, "bullet": bullet });
+    let prompt_data = match review {
+        Some(review) => json!({
+            "role": role,
+            "bullet": bullet,
+            "review": {
+                "action": review.action,
+                "project": review.project,
+                "result": review.result,
+            },
+        }),
+        None => json!({ "role": role, "bullet": bullet }),
+    };
+    let review_instructions = if review.is_some() {
+        "A current resume-wide review identified weak dimensions in the supplied review object. \
+Address every dimension marked partial or missing in both the assessment and rewrite options, \
+but treat those statuses only as guidance about what to inspect, never as facts. "
+    } else {
+        ""
+    };
     let prompt = format!(
         "You are Hireloom's fact-bound resume accomplishment reviewer. Assess the supplied bullet using \
 the APR method: Action is the person's specific contribution led by a strong action verb; \
@@ -1505,9 +1547,11 @@ includes Result only when directly supported. Retain supported named technologie
 audience, scope, and constraint details. Do not use APR labels or first-person phrasing. Do not \
 invent or overstate facts, scope, ownership, outcomes, or metrics. Do not ask questions or suggest \
 unsupported claims.\n\n\
+{}\n\
 <accomplishment_data>\n{}\n</accomplishment_data>",
-        serde_json::to_string(&prompt_data)
-            .map_err(|error| format!("Unable to build APR prompt: {error}"))?
+       review_instructions,
+       serde_json::to_string(&prompt_data)
+           .map_err(|error| format!("Unable to build APR prompt: {error}"))?
     );
     if prompt.len() > MAX_PROMPT_BYTES {
         return Err("APR analysis request exceeds the 256 KB limit".to_string());
@@ -2254,7 +2298,7 @@ mod tests {
     #[test]
     fn apr_prompt_contains_only_role_and_bullet_as_untrusted_data() {
         let target = sample_apr_target();
-        let prompt = build_apr_prompt(&target.role, &target.bullet).expect("APR prompt");
+        let prompt = build_apr_prompt(&target.role, &target.bullet, None).expect("APR prompt");
         assert!(prompt.contains("untrusted data"));
         assert!(prompt.contains("product, project, problem, or activity"));
         assert!(prompt.contains("Never invent work"));
@@ -2281,6 +2325,49 @@ mod tests {
         assert!(!prompt.contains("resume-1"));
         assert!(!prompt.contains("experience-1"));
         assert!(!prompt.contains("PRIVATE NAME"));
+    }
+
+    #[test]
+    fn apr_prompt_focuses_on_matching_weak_review_statuses_without_local_ids() {
+        let target = sample_apr_target();
+        let review = HighlightReview {
+            target: target.clone(),
+            action: AprStatus::Clear,
+            project: AprStatus::Partial,
+            result: AprStatus::Missing,
+        };
+        validate_apr_review(&target, Some(&review)).expect("matching weak review");
+        let prompt =
+            build_apr_prompt(&target.role, &target.bullet, Some(&review)).expect("APR prompt");
+        assert!(prompt.contains(
+            "\"review\":{\"action\":\"clear\",\"project\":\"partial\",\"result\":\"missing\"}"
+        ));
+        assert!(prompt.contains("Address every dimension marked partial or missing"));
+        assert!(!prompt.contains("resume-1"));
+        assert!(!prompt.contains("experience-1"));
+        assert!(!prompt.contains("bulletIndex"));
+    }
+
+    #[test]
+    fn apr_review_context_rejects_mismatched_and_all_clear_reviews() {
+        let target = sample_apr_target();
+        let mut mismatched = HighlightReview {
+            target: target.clone(),
+            action: AprStatus::Partial,
+            project: AprStatus::Clear,
+            result: AprStatus::Clear,
+        };
+        mismatched.target.bullet = "Different source.".to_string();
+        assert!(validate_apr_review(&target, Some(&mismatched)).is_err());
+
+        let all_clear = HighlightReview {
+            target,
+            action: AprStatus::Clear,
+            project: AprStatus::Clear,
+            result: AprStatus::Clear,
+        };
+        assert!(validate_apr_review(&all_clear.target, Some(&all_clear)).is_err());
+        assert!(validate_apr_review(&all_clear.target, None).is_ok());
     }
 
     #[test]

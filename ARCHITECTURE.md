@@ -106,17 +106,17 @@ The browser preview uses only `hireloom.workspace.v1` in `localStorage`.
 `src/platform.ts` is the only frontend module that chooses between Tauri and
 browser behavior. Its desktop methods invoke:
 
-| Command                  | Direction     | Result                                                      |
-| ------------------------ | ------------- | ----------------------------------------------------------- |
-| `load_workspace`         | Rust to React | Validated workspace or no saved file                        |
-| `save_workspace`         | React to Rust | Atomically persisted workspace                              |
-| `export_document`        | React to Rust | User-selected PDF/JSON save result                          |
-| `copilot_status`         | React to Rust | Local CLI availability and version detail                   |
-| `copilot_login`          | React to Rust | App-specific web login completion                           |
-| `generate_resume`        | React to Rust | Validated, non-applied AI proposal                          |
-| `analyze_accomplishment` | React to Rust | Validated transient APR feedback and direct rewrite options |
-| `refine_accomplishment`  | React to Rust | Feedback-guided replacement APR option set                  |
-| `review_highlights`      | React to Rust | One batched, diagnosis-only APR verdict per sent highlight  |
+| Command                  | Direction     | Result                                                                                                    |
+| ------------------------ | ------------- | --------------------------------------------------------------------------------------------------------- |
+| `load_workspace`         | Rust to React | Validated workspace or no saved file                                                                      |
+| `save_workspace`         | React to Rust | Atomically persisted workspace                                                                            |
+| `export_document`        | React to Rust | User-selected PDF/JSON save result                                                                        |
+| `copilot_status`         | React to Rust | Local CLI availability and version detail                                                                 |
+| `copilot_login`          | React to Rust | App-specific web login completion                                                                         |
+| `generate_resume`        | React to Rust | Validated, non-applied AI proposal                                                                        |
+| `analyze_accomplishment` | React to Rust | Validated transient APR feedback and direct rewrite options, optionally focused by a matching weak review |
+| `refine_accomplishment`  | React to Rust | Feedback-guided replacement APR option set                                                                |
+| `review_highlights`      | React to Rust | One batched, diagnosis-only APR verdict per sent highlight                                                |
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.
@@ -183,7 +183,10 @@ Inline highlight guidance uses the existing internal APR contract, isolation,
 and generation lock but presents it under the selected Experience highlight.
 React keeps resume ID, experience ID, and bullet index as local correlation
 state. Rust receives and validates that target, sends only the role and selected
-highlight as delimited untrusted prompt data, strictly validates the
+highlight as delimited untrusted prompt data, and may additionally receive a
+full-target-matching transient weak review. When present, only its Action,
+Project, and Result status values are serialized into the prompt; local IDs and
+positions remain local. Rust strictly validates the
 Action/Project/Result response and fixed rewrite strategies, then attaches the
 unchanged local target. Responses contain one to three unique entries in canonical
 relative `concise`, `detail-forward`, `split` order. Unified strategies contain one
@@ -304,9 +307,9 @@ activate help under one nonempty highlight
   -> show exact highlight + role-only disclosure inline
   -> separate single-use consent
   -> platform.analyzeAccomplishment
-  -> Rust target validation + isolated shared Copilot runner
+  -> Rust target and optional weak-review validation + isolated shared Copilot runner
   -> explicit gemini-3.8-flash route with no fallback
-  -> role and bullet only in delimited untrusted prompt data
+  -> role, bullet, and eligible review statuses only in delimited untrusted prompt data
   -> strict APR response validation + local target echo
   -> visible What you did / Product or project / Impact feedback
   -> one-to-three direct fixed-strategy rewrite options
@@ -316,6 +319,13 @@ activate help under one nonempty highlight
   -> replace options only after a valid refined response
   -> atomic one/two-bullet apply + exact prior-resume undo snapshot
 ```
+
+The optional review context is derived at render/send time from the transient
+resume-wide review state. It is used only when every target field still matches
+and at least one Action, Project, or Result status is partial or missing.
+Absent, all-clear, stale, and mismatched reviews preserve the legacy
+role-and-highlight-only prompt. Refinement and whole-resume generation do not
+receive review context.
 
 ### Resume-wide highlight review
 

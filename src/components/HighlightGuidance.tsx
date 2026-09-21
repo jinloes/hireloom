@@ -5,12 +5,18 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import type { AprAnalysis, AprOptionId, AprTarget } from "../model";
+import type {
+  AprAnalysis,
+  AprOptionId,
+  AprTarget,
+  HighlightReview,
+} from "../model";
 import { desktop, type CopilotStatus } from "../platform";
 
 export type HighlightGuidanceController = {
   target: AprTarget | null;
   onSelect: (target: AprTarget) => void;
+  review: HighlightReview | null;
   consent: boolean;
   onConsent: (value: boolean) => void;
   onAnalyze: () => void;
@@ -40,6 +46,7 @@ export function HighlightGuidance({
 }) {
   const {
     target,
+    review,
     consent,
     onConsent,
     onAnalyze,
@@ -106,9 +113,12 @@ export function HighlightGuidance({
         <ShieldCheck size={18} />
         <span>
           Initial guidance sends only this highlight and the role “
-          {target.role || "Untitled role"}” to GitHub Copilot. Refinement also
-          sends your feedback and the displayed options. Resume IDs and the
-          highlight position stay local.
+          {target.role || "Untitled role"}”
+          {review
+            ? ` plus the current review statuses: Action ${review.action}, Project ${review.project}, Impact ${review.result}.`
+            : " "}{" "}
+          to GitHub Copilot. Refinement also sends your feedback and the
+          displayed options. Resume IDs and the highlight position stay local.
         </span>
       </p>
       <label className="consent-check">
@@ -119,7 +129,9 @@ export function HighlightGuidance({
           disabled={busy === "analyze" || !desktop}
         />
         <span>
-          Send this highlight and role to GitHub Copilot for this request.
+          Send this highlight and role
+          {review ? " plus its current review statuses" : ""} to GitHub Copilot
+          for this request.
         </span>
       </label>
       <button
@@ -161,8 +173,9 @@ export function HighlightGuidance({
       {analysis && (
         <div className="highlight-analysis">
           <p className="fine-print">
-            Copilot used only the selected role and highlight. Review every
-            claim before applying an option.
+            Copilot used only the selected role and highlight
+            {review ? " plus the current weak-dimension statuses" : ""}. Review
+            every claim before applying an option.
           </p>
           {(
             [

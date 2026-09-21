@@ -100,6 +100,13 @@ consent is required for every guidance request. Only that highlight and its role
 text are sent; resume and experience IDs and the highlight position remain
 local.
 
+If that unchanged highlight has a current weak result from **Review all
+highlights**, the disclosure names the exact Action, Project, and Impact
+statuses sent with the initial guidance request. Those statuses only focus the
+rewrite on partial or missing dimensions; they are not additional facts.
+All-clear, absent, stale, or mismatched review results are omitted and keep the
+role-and-highlight request unchanged.
+
 Guidance labels the factual dimensions as **What you did**, **Product or
 project**, and **Impact**. Each is marked clear, partial, or missing. The same
 request immediately returns fact-bound rewrite options; there are no required
@@ -171,8 +178,11 @@ send controls are disabled while the highlights remain locally editable.
 - Whole-resume AI requests send the summary, work history, education, skills,
   professional headline, and job description to GitHub Copilot. Inline
   highlight guidance requests send only the selected highlight and its role.
-  A resume-wide highlight review sends every nonempty highlight and its role in
-  one consented request and returns only weak/clear verdicts, never rewrites.
+  A resume-wide highlight review sends every nonempty highlight and its role in one consented request
+  and returns only weak/clear verdicts, never rewrites. An eligible unchanged
+  weak verdict may add only its Action, Project, and Impact status values to
+  that highlight's separately consented initial guidance request; local IDs and
+  positions never leave the app.
   Dedicated name, email, phone, personal location, website, GitHub,
   diagnostics/initial rewrite, other resume fields, and local correlation IDs
   are excluded. **Anything you type into free text can still contain

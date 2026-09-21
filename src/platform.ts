@@ -4,6 +4,7 @@ import {
   type AprRefinement,
   type AprTarget,
   type AiProposal,
+  type HighlightReview,
   type HighlightReviews,
   type Resume,
   type Workspace,
@@ -11,6 +12,7 @@ import {
   parseWorkspace,
   validateAprAnalysis,
   validateAprTarget,
+  highlightReviewSchema,
   validateHighlightReviews,
   validateProposal,
   aprRefinementSchema,
@@ -105,6 +107,7 @@ export async function generateResume(
 export async function analyzeAccomplishment(
   target: AprTarget,
   consent: boolean,
+  review: HighlightReview | null = null,
 ): Promise<AprAnalysis> {
   if (!desktop) throw new Error("APR analysis requires the desktop app.");
   if (!consent)
@@ -112,9 +115,34 @@ export async function analyzeAccomplishment(
       "Confirm that you want to send this accomplishment to Copilot.",
     );
   const validTarget = validateAprTarget(target);
+  const validReview =
+    review === null ? null : highlightReviewSchema.parse(review);
+  if (
+    validReview &&
+    (validReview.target.resumeId !== validTarget.resumeId ||
+      validReview.target.experienceId !== validTarget.experienceId ||
+      validReview.target.bulletIndex !== validTarget.bulletIndex ||
+      validReview.target.role !== validTarget.role ||
+      validReview.target.bullet !== validTarget.bullet)
+  ) {
+    throw new Error(
+      "Highlight review does not match the selected accomplishment.",
+    );
+  }
+  if (
+    validReview &&
+    validReview.action === "clear" &&
+    validReview.project === "clear" &&
+    validReview.result === "clear"
+  ) {
+    throw new Error(
+      "Highlight review must identify at least one weak dimension.",
+    );
+  }
   return validateAprAnalysis(
     await invoke<unknown>("analyze_accomplishment", {
       ...validTarget,
+      ...(validReview ? { review: validReview } : {}),
       consent,
     }),
     validTarget,

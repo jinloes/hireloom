@@ -664,7 +664,10 @@ function App() {
     }
     setBusy("analyze");
     try {
-      const value = await analyzeAccomplishment(aprTarget, aprConsent);
+      const review = eligibleAprReview(aprTarget);
+      const value = review
+        ? await analyzeAccomplishment(aprTarget, aprConsent, review)
+        : await analyzeAccomplishment(aprTarget, aprConsent);
       setAprSuggestion({ value, source: aprTarget });
       setAprSelectedOption(null);
       setAprFeedback("");
@@ -705,6 +708,16 @@ function App() {
     );
     // A badge only survives while its exact source highlight is unchanged.
     return review && aprSourceIsCurrent(review.target) ? review : null;
+  }
+
+  function eligibleAprReview(target: AprTarget): HighlightReview | null {
+    const review = highlightReviewFor(target.experienceId, target.bulletIndex);
+    return review &&
+      (review.action !== "clear" ||
+        review.project !== "clear" ||
+        review.result !== "clear")
+      ? review
+      : null;
   }
 
   async function reviewAllHighlights() {
@@ -1310,6 +1323,7 @@ function App() {
                       consent: aprConsent,
                       onConsent: setAprConsent,
                       onAnalyze: () => void analyzeApr(),
+                      review: aprTarget ? eligibleAprReview(aprTarget) : null,
                       analysis: aprSuggestion?.value ?? null,
                       stale:
                         aprTarget !== null && !aprSourceIsCurrent(aprTarget),

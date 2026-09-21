@@ -1031,5 +1031,58 @@ describe("resume studio", () => {
       );
       expect(screen.queryByText(/^Weak /)).toBeNull();
     });
+
+    it("sends matching weak review statuses with initial guidance", async () => {
+      vi.mocked(platform.reviewHighlights).mockResolvedValue(reviewsFor());
+      vi.mocked(platform.analyzeAccomplishment).mockImplementation(
+        async (target) => aprResult(target),
+      );
+      await openExperience();
+
+      fireEvent.click(reviewConsent());
+      fireEvent.click(reviewButton());
+      await screen.findByText("Weak project, result");
+
+      fireEvent.click(
+        screen.getAllByRole("button", {
+          name: "Help me strengthen this highlight",
+        })[1],
+      );
+      expect(
+        screen.getByText(
+          /current review statuses: Action clear, Project partial, Impact missing/,
+        ),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("checkbox", {
+          name: /plus its current review statuses/,
+        }),
+      ).toBeVisible();
+
+      fireEvent.click(
+        screen.getByRole("checkbox", {
+          name: /plus its current review statuses/,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Send for guidance" }),
+      );
+      await screen.findByText("Specific action.");
+
+      expect(platform.analyzeAccomplishment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resumeId: workspace.resumes[0].id,
+          experienceId: workspace.resumes[0].experience[0].id,
+          bulletIndex: 1,
+          bullet: workspace.resumes[0].experience[0].bullets[1],
+        }),
+        true,
+        expect.objectContaining({
+          action: "clear",
+          project: "partial",
+          result: "missing",
+        }),
+      );
+    });
   });
 });
