@@ -28,9 +28,10 @@ connect to Copilot. It does not read your desktop workspace.
 - Personal details including portfolio, LinkedIn, and GitHub URLs; summary;
   experience entries that can be added at the top or end, reorderable
   experience and highlights with month/year dates and current-role support;
-  education; and skills.
+  education; skills; and reorderable Projects, Certifications, Awards,
+  Volunteer Experience, Publications, and Languages sections.
 - Full-width Content, Copilot, Design, and Preview workspace tabs, with visible
-  Content tabs for Personal, Summary, Experience, Education, and Skills.
+  Content tabs for Personal, Summary, Experience, Education, Skills, and More.
 - A responsive Experience summary/master-detail view with one selected job
   editor.
 - Eight-second Undo for a removed job, education entry, or experience
@@ -40,7 +41,10 @@ connect to Copilot. It does not read your desktop workspace.
 - Local autosaving with visible failures, retries, and recovery backup export.
 - A4, selectable-text PDFs with embedded fonts and automatic page overflow.
 - JSON workspace backups and validated, non-destructive imports.
-- Job-description keyword overlap and a transparent resume-essentials checklist.
+- Per-resume target jobs with role, company, source URL, and description.
+- A deterministic local audit with explainable setup, content, evidence,
+  alignment, format, and consistency findings that link to the exact editor
+  field. It is not an ATS score or hiring prediction.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
   review, multiple fact-bound highlight options, a resume-wide weak-highlight
   review, stale-result protection, and one-step undo until the next edit.
@@ -86,8 +90,9 @@ enforces the 128 KB final-answer limit before feature-specific validation.
 Hireloom also accepts the CLI's commented JSON configuration format while
 preserving existing settings and enforcing its isolation controls.
 
-Add real experience or skills, optionally paste a job description, and check the
-consent box for each request. Copilot proposes a summary and experience
+Add real experience or skills, optionally save a target job, and check the
+consent box for each request. Only the target job description—not its title,
+company, or source URL—is included in whole-resume AI requests. Copilot proposes a summary and experience
 highlights; it does not modify employer names, dates, education, or skills.
 **Review every claim before applying.** AI can still make mistakes or invent
 details. Suggestions are never silently applied. CLI errors, expired login,
@@ -193,10 +198,14 @@ send controls are disabled while the highlights remain locally editable.
   offline AI or zero retention.
 - Missing files create an empty workspace; corrupt files and unsupported
   versions block loading rather than being overwritten.
+- Workspace version 2 adds target-job metadata and typed optional sections.
+  Existing version-1 desktop files, browser data, and backups migrate
+  automatically in memory without discarding resume content.
 
 Use **Document actions → Back up workspace** or **My resumes → Back up all**.
-Imports accept Hireloom version-1 JSON backups up to 2 MB and add new document
-copies rather than replacing existing work. Up to 50 resumes are supported.
+Imports accept Hireloom version-1 or version-2 JSON backups up to 2 MB, migrate
+version 1 when needed, and add new document copies rather than replacing
+existing work. Up to 50 resumes are supported.
 
 ## Development
 
@@ -211,19 +220,32 @@ Repository guides:
 
 Shared IntelliJ IDEA/RustRover run configurations are committed under `.run/`.
 Use **Browser Preview** for the isolated browser build, **Desktop App** for
-`tauri dev`, and the frontend, E2E, Rust test, build, and **Native Clippy**
-configurations for the matching checks below. The IDE must have Node.js support
-and Rust installed.
+`tauri dev`, and the frontend, lint, E2E, Rust test, build, and **Native
+Clippy** configurations for the matching checks below. The IDE must have
+Node.js support and Rust installed.
 
 ```sh
 npm test
+npm run lint
 npm run build
 npx playwright install chromium webkit
 npm run test:e2e
 npm run test:rust
 npm run clippy:rust
 npm run format:check
+npm run format:rust:check
 ```
+
+Code style uses each ecosystem's standard tools with default settings: Prettier
+formats TypeScript, CSS, JSON, and Markdown (`npm run format`); ESLint with
+`typescript-eslint`, React Hooks, and React Refresh rules lints TypeScript
+(`npm run lint`, `npm run lint:fix`); rustfmt formats Rust
+(`npm run format:rust`); and Clippy lints Rust with warnings denied.
+`npm run format:all` applies ESLint fixes, Prettier, and rustfmt in one step.
+`npm install` sets up a husky pre-commit hook that runs lint-staged, so staged
+files are fixed and formatted on every commit. `.editorconfig` keeps editors
+aligned with those formatters, and `.vscode/extensions.json` recommends the
+matching extensions.
 
 Set `PLAYWRIGHT_PORT` to run browser tests on another port when `1420` is
 already in use, for example `PLAYWRIGHT_PORT=1422 npm run test:e2e`.

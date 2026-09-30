@@ -15,7 +15,6 @@ export function useWorkspace() {
   const queue = useRef<Promise<void>>(Promise.resolve());
 
   const load = useCallback(async () => {
-    setLoadError(null);
     try {
       const saved = await loadWorkspace();
       const next = saved ?? initialWorkspace();
@@ -31,6 +30,11 @@ export function useWorkspace() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  const reload = useCallback(async () => {
+    setLoadError(null);
+    await load();
   }, [load]);
 
   const flush = useCallback(async () => {
@@ -136,6 +140,6 @@ export function useWorkspace() {
     saving,
     dirty,
     flush,
-    reload: load,
+    reload,
   };
 }

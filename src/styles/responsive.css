@@ -1,0 +1,183 @@
+@media (min-width: 1650px) {
+  .workspace-heading,
+  .studio-frame,
+  .library {
+    margin-left: 48px;
+    margin-right: 48px;
+  }
+  .paper-scroll {
+    padding-left: 50px;
+    padding-right: 50px;
+  }
+  .resume-paper {
+    padding: 38px 42px;
+    font-size: 10px;
+    min-height: 850px;
+  }
+  .resume-heading h1 {
+    font-size: 28px;
+  }
+  .resume-entry-heading h3 {
+    font-size: 10px;
+  }
+  .resume-section h2 {
+    font-size: 8px;
+  }
+}
+@media (max-width: 1200px) {
+  .sidebar {
+    width: 195px;
+    flex-basis: 195px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .brand {
+    gap: 7px;
+    padding: 0 5px;
+  }
+  .brand > span {
+    font-size: 26px;
+  }
+  .brand-caption {
+    font-size: 7px;
+    padding-left: 46px;
+  }
+  .main-content {
+    margin-left: 195px;
+  }
+  .topbar {
+    padding: 0 23px;
+  }
+  .workspace-heading,
+  .studio-frame,
+  .library {
+    margin-left: 23px;
+    margin-right: 23px;
+  }
+  .heading-detail {
+    display: none;
+  }
+  .assistant-content,
+  .style-content {
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .content-section-scroll {
+    padding-left: 17px;
+    padding-right: 17px;
+  }
+  .content-tabs {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .paper-scroll {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .resume-paper {
+    padding: 29px 24px;
+    font-size: 9px;
+    min-height: 580px;
+  }
+  .resume-heading h1 {
+    font-size: 23px;
+  }
+  .resume-entry-heading {
+    gap: 7px;
+  }
+  .resume-entry-heading h3 {
+    font-size: 9px;
+  }
+  .preview-toolbar {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .readiness-bar {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .document-title input {
+    width: 210px;
+  }
+  .highlight-option-card {
+    padding: 9px;
+  }
+  .highlight-guidance-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+@media (max-width: 980px) {
+  .sidebar {
+    width: 73px;
+    flex-basis: 73px;
+    padding: 22px 12px;
+  }
+  .brand {
+    padding: 0;
+    justify-content: center;
+  }
+  .brand > span,
+  .brand-caption,
+  .sidebar-resumes,
+  .copilot-promo,
+  .local-status,
+  .sidebar-version,
+  .sidebar .nav-label {
+    display: none;
+  }
+  .main-content {
+    margin-left: 73px;
+  }
+  .sidebar .new-resume {
+    font-size: 0;
+    gap: 0;
+    padding: 14px;
+    margin: 28px 0 15px;
+  }
+  .nav-item {
+    font-size: 0;
+    gap: 0;
+    padding: 14px;
+    justify-content: center;
+  }
+  .nav-item > svg:last-child:not(:first-child),
+  .nav-item > .count {
+    display: none;
+  }
+  .workspace-heading h1 {
+    font-size: 26px;
+  }
+  .page-footer > span:last-child {
+    display: none;
+  }
+  .resume-paper {
+    padding: 23px 20px;
+  }
+  .preview-toolbar > span:last-child {
+    gap: 5px;
+  }
+  .preview-toolbar > span:first-child {
+    font-size: 7px;
+    letter-spacing: 1px;
+  }
+  .document-toolbar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .document-actions {
+    gap: 7px;
+  }
+  .experience-workspace {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}

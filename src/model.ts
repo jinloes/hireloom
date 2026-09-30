@@ -1,4 +1,21 @@
 import { z } from "zod";
+import {
+  additionalResumeFields,
+  DEFAULT_ADDITIONAL_SECTION_ORDER,
+  emptyAdditionalResumeFields,
+} from "./resumeExtensions";
+import { migrateWorkspaceV1 } from "./workspaceMigration";
+
+export type {
+  AdditionalSection,
+  Award,
+  Certification,
+  Language,
+  Project,
+  Publication,
+  TargetJob,
+  Volunteer,
+} from "./resumeExtensions";
 
 const id = z.string().min(1).max(100);
 const shortText = z.string().max(500);
@@ -56,12 +73,21 @@ export const resumeSchema = z
       )
       .max(20),
     skills: z.array(z.string().max(100)).max(100),
-    jobDescription: z.string().max(20_000),
+    ...additionalResumeFields,
     template: z.enum(["editorial", "modern"]),
     accent: z.enum(["teal", "indigo", "charcoal"]),
   })
   .superRefine((resume, ctx) => {
-    for (const key of ["experience", "education"] as const) {
+    for (const key of [
+      "experience",
+      "education",
+      "projects",
+      "certifications",
+      "awards",
+      "volunteer",
+      "publications",
+      "languages",
+    ] as const) {
       if (
         new Set(resume[key].map((entry) => entry.id)).size !==
         resume[key].length
@@ -73,11 +99,24 @@ export const resumeSchema = z
         });
       }
     }
+    if (
+      new Set(resume.additionalSectionOrder).size !==
+        DEFAULT_ADDITIONAL_SECTION_ORDER.length ||
+      DEFAULT_ADDITIONAL_SECTION_ORDER.some(
+        (section) => !resume.additionalSectionOrder.includes(section),
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Additional section order must contain every section once.",
+        path: ["additionalSectionOrder"],
+      });
+    }
   });
 
 export const workspaceSchema = z
   .strictObject({
-    version: z.literal(1),
+    version: z.literal(2),
     activeResumeId: id,
     resumes: z.array(resumeSchema).min(1).max(50),
   })
@@ -302,7 +341,7 @@ export function createResume(): Resume {
     experience: [],
     education: [],
     skills: [],
-    jobDescription: "",
+    ...emptyAdditionalResumeFields(),
     template: "editorial",
     accent: "teal",
   };
@@ -310,7 +349,7 @@ export function createResume(): Resume {
 
 export function initialWorkspace(): Workspace {
   const resume = createResume();
-  return { version: 1, activeResumeId: resume.id, resumes: [resume] };
+  return { version: 2, activeResumeId: resume.id, resumes: [resume] };
 }
 
 export function exampleResume(): Resume {
@@ -379,7 +418,14 @@ export function parseWorkspace(text: string): Workspace {
     throw new Error("This workspace is larger than the 2 MB limit.");
   }
   const parsed: unknown = JSON.parse(text);
-  const result = workspaceSchema.safeParse(parsed);
+  const migrated =
+    typeof parsed === "object" &&
+    parsed !== null &&
+    "version" in parsed &&
+    parsed.version === 1
+      ? migrateWorkspaceV1(parsed)
+      : parsed;
+  const result = workspaceSchema.safeParse(migrated);
   if (!result.success) {
     throw new Error(
       `This is not a supported Hireloom workspace: ${result.error.issues[0]?.message ?? "invalid data"}`,
@@ -615,7 +661,7 @@ export function jobKeywords(
     ...resume.education.map((entry) => entry.degree),
   ].join(" ");
   return vocabulary
-    .filter((term) => containsPhrase(resume.jobDescription, term))
+    .filter((term) => containsPhrase(resume.targetJob.description, term))
     .map((term) => ({ term, matched: containsPhrase(content, term) }));
 }
 

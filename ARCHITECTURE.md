@@ -33,13 +33,19 @@ again at the native boundary.
 ### Domain and contract
 
 `src/model.ts` is the frontend source of truth for workspace, resume, and AI
-proposal shapes. Strict Zod schemas reject unknown fields and enforce size,
-count, ID, and selection invariants.
+proposal shapes; typed target-job and optional-section schemas live in
+`src/resumeExtensions.ts`. Strict Zod schemas reject unknown fields and enforce
+size, count, ID, section-order, and selection invariants.
 
-Matching Serde types and validators in `src-tauri/src/lib.rs` protect the native
-boundary. Persisted or IPC shape changes must be made in both languages. The
-current workspace format is version `1`; compatibility-affecting changes require
-an explicit migration/version decision rather than silently accepting or
+Matching Serde types in `src-tauri/src/contract.rs` and validators in
+`src-tauri/src/validation.rs` protect the native boundary. Persisted or IPC shape changes must be made in both languages. The
+current workspace format is version `2`. `src/workspaceMigration.ts` strictly
+parses version 1 and migrates its `jobDescription` into
+`targetJob.description`; native loading performs the matching migration before
+validation. New optional sections default empty and their explicit order
+defaults to Projects, Certifications, Awards, Volunteer Experience,
+Publications, then Languages. Compatibility-affecting changes require an
+explicit migration/version decision rather than silently accepting or
 discarding old data.
 
 Experience dates created by the editor use `YYYY-MM`; ongoing roles use
@@ -49,36 +55,39 @@ a picker value.
 
 ### Application orchestration
 
-`src/App.tsx` owns top-level UI state and user workflows: document management,
-backup import/export, PDF generation, Copilot status/login/generation, proposal
-review, per-resume transient Content navigation and selected Experience state,
-transient workspace mode and Preview scroll state, bounded item-removal
-recovery, transient direct inline highlight guidance, stale-result checks, and
-one-step AI undo.
+`src/App.tsx` owns top-level UI state and composes the workflows: document
+management, Copilot status/login, per-resume transient Content navigation and
+selected Experience state, transient workspace mode and Preview scroll state,
+bounded item-removal recovery, and one-step AI undo. Workflow state that App
+wires but does not implement lives in focused hooks and pure modules:
+`useHighlightGuidance` (inline guidance and resume-wide review, with target
+staleness checks), `useResumeGeneration` (whole-resume proposals),
+`useWorkspaceTransfer` (PDF export and backup import/export), and
+`contentView` (item removal and restoration). They receive App's shared busy,
+notice, undo, and resume-change callbacks, so there is still one source of
+truth for resume edits.
 
-Focused components remain controlled by `App`:
+Focused components remain controlled by `App`; shell pieces (`Sidebar`,
+`WorkspaceHeader`, `ResumeLibrary`, `DocumentToolbar`, `WorkspaceTabs`,
+`PreviewPanel`, `Dialogs`) are presentational, and:
 
-- `Editor` renders visible peer tabs with one selected Content section, emits
+- `Editor` (composing per-section modules under `components/editor/`) renders visible peer tabs with one selected Content section, emits
   updated resume values and typed item-removal requests, presents a responsive
   Experience summary/master-detail view with one selected editor, and places
   guidance under the active nonempty highlight.
 - `HighlightGuidance` renders the bounded disclosure, feedback, accessible
   fixed-strategy option selection, and explicit apply or keep controls.
 - `StylePanel` emits template/accent changes.
-- `CopilotPanel` renders whole-resume consent and review controls but does not
-  call native APIs itself.
+- `CopilotPanel` renders target-job setup, the local audit, whole-resume consent,
+  and review controls but does not call native APIs itself.
 - `ResumePreview` renders the continuous screen representation.
 - `ResumeDocument` is dynamically imported only for PDF export.
 
 The studio shell exposes Content, Copilot, Design, and Preview as one labeled
-top-level tablist. One full-width panel is exposed at a time; inactive panels
-remain mounted with the native `hidden` attribute so they leave the
-accessibility tree without losing transient same-resume state. Content has its
-own separately labeled tablist for Personal, Summary, Experience, Education,
-and Skills. Both tab tiers use automatic local activation with roving focus,
-Left/Right wrapping, and Home/End navigation. The tablists and item-removal Undo
-remain outside panel scrolling, while each active mode owns one bounded vertical
-scroll surface.
+top-level tablist, and Content has its own section tablist. Both tiers use
+roving focus with automatic activation. Inactive panels stay mounted but
+`hidden`, so they leave the accessibility tree without losing transient
+same-resume state; each active mode owns one bounded vertical scroll surface.
 
 ### Persistence
 
@@ -100,26 +109,36 @@ atomically replaces the destination. On Unix, app data directories and files
 are restricted to the current user.
 
 The browser preview uses only `hireloom.workspace.v1` in `localStorage`.
+The key remains stable so existing browser work can be loaded and migrated to
+the version-2 payload rather than becoming unreachable.
 
 ### Platform adapter and IPC
 
 `src/platform.ts` is the only frontend module that chooses between Tauri and
-browser behavior. Its desktop methods invoke:
+browser behavior. Its desktop methods invoke these React-initiated commands:
 
-| Command                  | Direction     | Result                                                                                                    |
-| ------------------------ | ------------- | --------------------------------------------------------------------------------------------------------- |
-| `load_workspace`         | Rust to React | Validated workspace or no saved file                                                                      |
-| `save_workspace`         | React to Rust | Atomically persisted workspace                                                                            |
-| `export_document`        | React to Rust | User-selected PDF/JSON save result                                                                        |
-| `copilot_status`         | React to Rust | Local CLI availability and version detail                                                                 |
-| `copilot_login`          | React to Rust | App-specific web login completion                                                                         |
-| `generate_resume`        | React to Rust | Validated, non-applied AI proposal                                                                        |
-| `analyze_accomplishment` | React to Rust | Validated transient APR feedback and direct rewrite options, optionally focused by a matching weak review |
-| `refine_accomplishment`  | React to Rust | Feedback-guided replacement APR option set                                                                |
-| `review_highlights`      | React to Rust | One batched, diagnosis-only APR verdict per sent highlight                                                |
+- `load_workspace`: validated workspace or no saved file.
+- `save_workspace`: atomically persisted workspace.
+- `export_document`: user-selected PDF/JSON save result.
+- `copilot_status`: local CLI availability and version detail.
+- `copilot_login`: app-specific web login completion.
+- `generate_resume`: validated, non-applied AI proposal.
+- `analyze_accomplishment`: validated transient APR feedback and direct rewrite options, optionally focused by a matching weak review.
+- `refine_accomplishment`: feedback-guided replacement APR option set.
+- `review_highlights`: one batched, diagnosis-only APR verdict per sent highlight.
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.
+
+### Native backend layering
+
+`src-tauri/src/lib.rs` only declares modules and registers commands. Thin
+handlers in `commands.rs` check consent, take locks, and validate input before
+delegating downward: `persistence.rs` for app data, `ai/` for prompt building,
+model routing, and strict response parsing, `copilot/` for the isolated CLI
+profile and SDK session, and `process.rs` for bounded direct subprocesses.
+Lower layers never call upward, and only `commands.rs` touches Tauri command
+state. Modules stay under about 20 KB so each can be read whole.
 
 ### PDF generation
 
@@ -127,6 +146,16 @@ reject browser calls.
 path is local, produces selectable text, uses a single-column A4 layout, and
 allows content to wrap across pages. The on-screen preview is not treated as a
 pagination oracle; the exported PDF is authoritative.
+
+### Local target-job audit
+
+`src/targetAudit.ts` runs deterministic checks entirely in the renderer. It
+uses the saved target description, structured resume fields, and a small
+built-in vocabulary to report observed setup, content, evidence, job-alignment,
+format-reference, and date-consistency issues. Findings explain the observation
+and rationale and carry an exact Content section/field or target-job field for
+navigation. They never assign an ATS score, fetch the source URL, contact
+Copilot, or recommend representing an unsupported skill as fact.
 
 ### Copilot boundary
 
@@ -191,10 +220,8 @@ Action/Project/Result response and fixed rewrite strategies, then attaches the
 unchanged local target. Responses contain one to three unique entries in canonical
 relative `concise`, `detail-forward`, `split` order. Unified strategies contain one
 bullet; split contains exactly two ordered bullets and is omitted unless facts
-support two nonredundant highlights. The prompt treats structure, clarity, specificity, and action-led wording
-changes as truthful improvements even when impact is absent. It forbids
-questions and unsupported suggestions; the single response immediately
-supplies the factual feedback and at least one rewrite option.
+support two nonredundant highlights. The single response supplies factual
+feedback and at least one rewrite option, with no follow-up questions.
 
 The result is transient. React revalidates the echoed target and permits an
 explicit apply only after the user selects a fresh option and while the active
@@ -203,34 +230,25 @@ to unsent fields do not stale it. Atomic apply splices either one or two
 returned bullets at the exact index, preserves adjacent order and all other
 resume fields, and rejects a split above the 30-highlight limit.
 
-Users may submit freeform feedback against the displayed option set through a
-separate consented refinement request. The request includes the original role
-and highlight, current options, and feedback as delimited untrusted data. The
-original role and highlight remain the complete factual boundary; options are
-drafts rather than new facts, and feedback may direct wording, emphasis, tone,
-or length without authorizing invented claims. Refinement uses the same locked
-Gemini SDK path and strict response contract. Success replaces the complete
+Freeform refinement feedback is a separate consented request carrying the
+original role and highlight, current options, and feedback as delimited
+untrusted data. The original role and highlight remain the complete factual
+boundary: options are drafts, not new facts, and feedback may steer wording but
+never authorizes invented claims. Refinement uses the same locked SDK path and
+strict response contract. Success replaces the complete
 option set and clears selection; failure preserves the prior options, selection,
 feedback, and resume.
 
-The Gemini-tuned prompt requires every bullet to begin with a strong action verb, naturally combines
-Action with Product or project, includes Result only when supplied facts
-support it, preserves supported named technologies and context, avoids APR
-labels and first-person phrasing, and does not invent or overstate facts,
-scope, ownership, outcomes, or metrics. Concise output must be materially
-shorter without losing essential specificity; detail-forward output uses the
-strongest supported details without filler; split output contains two
-factually distinct, nonoverlapping contributions. Near-duplicate options and padded unsupported option sets are rejected by
-instruction.
-Strict parsing additionally enforces UTF-8 byte limits,
-strategy order/cardinality, exact target binding, and changed options.
+Prompt wording rules and the meaning of each rewrite strategy are user-facing
+behavior described in the README's GitHub Copilot section; `ai/prompts.rs` is
+authoritative. Architecturally, prompts may only restate supplied facts, and
+strict parsing enforces UTF-8 byte limits, strategy order/cardinality, exact
+target binding, and changed options regardless of what the prompt requested.
 
-The inline option radiogroup uses static labels and tradeoffs; untrusted output
-cannot define option semantics. Nothing is selected by default or after a
-refresh. Failure preserves the current result, selection, and resume while
-clearing request consent. Selecting another highlight, keeping
-the current highlight, or applying the selected option clears all guidance
-state. None of this state is autosaved.
+Option labels and tradeoffs are static UI text, so untrusted output cannot
+define option semantics. Nothing is preselected. Failure preserves the current
+result, selection, and resume while clearing consent. Guidance state is never
+autosaved and is cleared by selecting another highlight, keeping, or applying.
 
 Copilot authentication and request data may be retained inside the app-specific
 Copilot directory and processed under GitHub account policies. "Local-first"
@@ -368,26 +386,24 @@ consent once in the Experience section
 
 ## Verification strategy
 
-- Vitest covers domain invariants and React workflows with mocked platform APIs,
-  including both tab tiers and focus, current Preview data, stable Experience
-  selection, cross-mode item-removal timing/restoration, guidance consent,
-  canonical option shape, explicit no-default selection, staleness, failure
-  preservation, atomic split order/cap, and exact AI undo.
-- Rust unit tests cover native validation, atomic writes, prompt redaction,
-  process isolation flags, bounded execution, and malformed responses.
-- Playwright exercises the browser adapter in Chromium and WebKit, including
-  exact-size and zoom-equivalent full-width workspace geometry, both tab tiers,
-  active-panel and same-resume scroll preservation, responsive Experience
-  master-detail editing, cross-mode item-removal recovery, the desktop-only
-  inline guidance negative control, local editing, persistence, recovery,
-  imports, document management, and ATS-relevant PDF heading,
-  text-preservation, and single-column extraction-order checks.
+- Vitest covers domain invariants and React workflows against the rendered App
+  with mocked platform APIs: navigation and focus, item-removal recovery,
+  per-request consent, option shape and selection, staleness, failure
+  preservation, and exact AI undo.
+- Rust unit tests live beside each native module and cover validation, atomic
+  writes, prompt redaction, model routing, SDK isolation settings, bounded
+  execution, and malformed responses.
+- Playwright exercises the browser adapter in Chromium and WebKit: workspace
+  geometry at exact and zoom-equivalent sizes, editing, persistence, recovery,
+  imports, document management, desktop-only AI negative controls, and
+  ATS-relevant PDF text and reading order.
+- Prettier, ESLint, rustfmt, and Clippy enforce standard style and lint rules.
 - GitHub Actions runs frontend checks and native checks across macOS, Windows,
-  and Linux. Automated tests never make live Copilot requests.
+  and Linux. Automated tests never make live Copilot requests. See
+  [`CODE_MAP.md`](CODE_MAP.md) for per-file test coverage.
 
 ## Deliberate current limitations
 
-- Native backend code remains in one module while the command surface is small.
 - There is no cloud account, synchronization, telemetry, application tracker,
   DOCX support, or arbitrary resume import.
 - Keyword overlap is a small deterministic local vocabulary check, not an ATS

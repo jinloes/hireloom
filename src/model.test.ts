@@ -24,20 +24,45 @@ describe("workspace validation", () => {
     expect(parseWorkspace(JSON.stringify(workspace))).toEqual(workspace);
   });
 
-  it("loads version-1 workspaces created before the GitHub field existed", () => {
-    const workspace = initialWorkspace();
-    const legacy = structuredClone(workspace);
-    delete (legacy.resumes[0].basics as Partial<Resume["basics"]>).github;
-    expect(
-      parseWorkspace(JSON.stringify(legacy)).resumes[0].basics.github,
-    ).toBe("");
+  it("migrates version-1 workspaces without losing the job description", () => {
+    const resume = createResume();
+    const legacyResume = {
+      ...resume,
+      jobDescription: "Build reliable distributed systems.",
+    };
+    delete (legacyResume.basics as Partial<Resume["basics"]>).github;
+    for (const key of [
+      "targetJob",
+      "projects",
+      "certifications",
+      "awards",
+      "volunteer",
+      "publications",
+      "languages",
+      "additionalSectionOrder",
+    ] as const) {
+      delete (legacyResume as Partial<Resume>)[key];
+    }
+    const migrated = parseWorkspace(
+      JSON.stringify({
+        version: 1,
+        activeResumeId: resume.id,
+        resumes: [legacyResume],
+      }),
+    );
+    expect(migrated.version).toBe(2);
+    expect(migrated.resumes[0].basics.github).toBe("");
+    expect(migrated.resumes[0].targetJob.description).toBe(
+      "Build reliable distributed systems.",
+    );
+    expect(migrated.resumes[0].projects).toEqual([]);
   });
 
   it("rejects corrupt data, future versions, missing selections, and duplicate IDs", () => {
     const workspace = initialWorkspace();
     expect(() => parseWorkspace("{broken")).toThrow();
     expect(() =>
-      parseWorkspace(JSON.stringify({ ...workspace, version: 2 })),
+      parseWorkspace(JSON.stringify({ ...workspace, version: 3 })),
     ).toThrow();
     expect(() =>
       parseWorkspace(
@@ -63,7 +88,7 @@ describe("workspace validation", () => {
   it("rejects duplicate entries and unknown fields", () => {
     const resume = exampleResume();
     const workspace = {
-      version: 1,
+      version: 2,
       activeResumeId: resume.id,
       resumes: [resume],
     };
@@ -76,6 +101,36 @@ describe("workspace validation", () => {
         JSON.stringify({ ...initialWorkspace(), token: "not-supported" }),
       ),
     ).toThrow();
+  });
+
+  it("validates new section IDs and the complete section order", () => {
+    const workspace = initialWorkspace();
+    const resume = workspace.resumes[0];
+    const project = {
+      id: "project-1",
+      name: "Portfolio",
+      role: "Designer",
+      url: "",
+      startDate: "",
+      endDate: "",
+      bullets: [],
+    };
+    resume.projects = [project, project];
+    expect(() => parseWorkspace(JSON.stringify(workspace))).toThrow(
+      "Duplicate projects",
+    );
+    resume.projects = [];
+    resume.additionalSectionOrder = [
+      "projects",
+      "projects",
+      "awards",
+      "volunteer",
+      "publications",
+      "languages",
+    ];
+    expect(() => parseWorkspace(JSON.stringify(workspace))).toThrow(
+      "every section once",
+    );
   });
 });
 
@@ -413,7 +468,7 @@ describe("local feedback", () => {
 
   it("does not match partial technical terms or the job description against itself", () => {
     const resume = createResume();
-    resume.jobDescription =
+    resume.targetJob.description =
       "Java, JavaScript, C++, C#, .NET and React experience.";
     resume.skills = ["JavaScript", "C++"];
     const keywords = jobKeywords(resume);

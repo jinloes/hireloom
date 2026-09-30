@@ -1,4 +1,9 @@
-import { accents, formatYearMonth, type Resume } from "../model";
+import {
+  accents,
+  formatYearMonth,
+  type AdditionalSection,
+  type Resume,
+} from "../model";
 
 export function ResumePreview({ resume }: { resume: Resume }) {
   const contact = [
@@ -84,10 +89,16 @@ export function ResumePreview({ resume }: { resume: Resume }) {
           <p>{resume.skills.join("  ·  ")}</p>
         </section>
       )}
+      {resume.additionalSectionOrder.map((section) => (
+        <AdditionalPreview key={section} resume={resume} section={section} />
+      ))}
       {!resume.summary &&
         !resume.experience.length &&
         !resume.education.length &&
-        !resume.skills.length && (
+        !resume.skills.length &&
+        !resume.additionalSectionOrder.some(
+          (section) => resume[section].length,
+        ) && (
           <div className="paper-empty" aria-hidden="true">
             <div />
             <div />
@@ -99,5 +110,145 @@ export function ResumePreview({ resume }: { resume: Resume }) {
           </div>
         )}
     </article>
+  );
+}
+
+function AdditionalPreview({
+  resume,
+  section,
+}: {
+  resume: Resume;
+  section: AdditionalSection;
+}) {
+  if (!resume[section].length) return null;
+  if (section === "projects")
+    return (
+      <PreviewSection title="Projects">
+        {resume.projects.map((entry) => (
+          <PreviewEntry
+            key={entry.id}
+            title={entry.name}
+            dates={[entry.startDate, entry.endDate]}
+            subtitle={[entry.role, entry.url]}
+            bullets={entry.bullets}
+          />
+        ))}
+      </PreviewSection>
+    );
+  if (section === "certifications")
+    return (
+      <PreviewSection title="Certifications">
+        {resume.certifications.map((entry) => (
+          <PreviewEntry
+            key={entry.id}
+            title={entry.name}
+            dates={[entry.date]}
+            subtitle={[entry.issuer, entry.credentialUrl]}
+          />
+        ))}
+      </PreviewSection>
+    );
+  if (section === "awards")
+    return (
+      <PreviewSection title="Awards">
+        {resume.awards.map((entry) => (
+          <PreviewEntry
+            key={entry.id}
+            title={entry.title}
+            dates={[entry.date]}
+            subtitle={[entry.issuer]}
+            body={entry.description}
+          />
+        ))}
+      </PreviewSection>
+    );
+  if (section === "volunteer")
+    return (
+      <PreviewSection title="Volunteer Experience">
+        {resume.volunteer.map((entry) => (
+          <PreviewEntry
+            key={entry.id}
+            title={entry.role}
+            dates={[entry.startDate, entry.endDate]}
+            subtitle={[entry.organization]}
+            bullets={entry.bullets}
+          />
+        ))}
+      </PreviewSection>
+    );
+  if (section === "publications")
+    return (
+      <PreviewSection title="Publications">
+        {resume.publications.map((entry) => (
+          <PreviewEntry
+            key={entry.id}
+            title={entry.title}
+            dates={[entry.date]}
+            subtitle={[entry.publisher, entry.url]}
+          />
+        ))}
+      </PreviewSection>
+    );
+  return (
+    <PreviewSection title="Languages">
+      <p>
+        {resume.languages
+          .map((entry) =>
+            [entry.name, entry.proficiency].filter(Boolean).join(" — "),
+          )
+          .join("  ·  ")}
+      </p>
+    </PreviewSection>
+  );
+}
+
+function PreviewSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="resume-section">
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function PreviewEntry({
+  title,
+  dates,
+  subtitle,
+  body,
+  bullets = [],
+}: {
+  title: string;
+  dates: string[];
+  subtitle: string[];
+  body?: string;
+  bullets?: string[];
+}) {
+  return (
+    <div className="resume-entry">
+      <div className="resume-entry-heading">
+        <h3>{title}</h3>
+        <span>{dates.filter(Boolean).map(formatYearMonth).join(" – ")}</span>
+      </div>
+      {subtitle.some(Boolean) && (
+        <p className="resume-company">{subtitle.filter(Boolean).join(" · ")}</p>
+      )}
+      {body && <p>{body}</p>}
+      {bullets.some((bullet) => bullet.trim()) && (
+        <ul>
+          {bullets
+            .filter((bullet) => bullet.trim())
+            .map((bullet, index) => (
+              <li key={index}>{bullet}</li>
+            ))}
+        </ul>
+      )}
+    </div>
   );
 }

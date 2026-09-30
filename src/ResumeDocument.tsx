@@ -7,7 +7,12 @@ import {
   View,
   pdf,
 } from "@react-pdf/renderer";
-import { accents, formatYearMonth, type Resume } from "./model";
+import {
+  accents,
+  formatYearMonth,
+  type AdditionalSection,
+  type Resume,
+} from "./model";
 import sansRegular from "./assets/fonts/NotoSans-Regular.ttf";
 import sansBold from "./assets/fonts/NotoSans-Bold.ttf";
 import serifRegular from "./assets/fonts/NotoSerif-Regular.ttf";
@@ -70,7 +75,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export function ResumeDocument({ resume }: { resume: Resume }) {
+function ResumeDocument({ resume }: { resume: Resume }) {
   const accent = accents[resume.accent];
   const titleFamily =
     resume.template === "editorial" ? "Noto Serif" : "Noto Sans";
@@ -181,6 +186,14 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
             <Text>{resume.skills.join("  ·  ")}</Text>
           </>
         )}
+        {resume.additionalSectionOrder.map((section) => (
+          <AdditionalPdfSection
+            key={section}
+            resume={resume}
+            section={section}
+            accent={accent}
+          />
+        ))}
         <Text
           style={styles.pageNumber}
           fixed
@@ -190,6 +203,159 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
         />
       </Page>
     </Document>
+  );
+}
+
+function PdfSectionTitle({ title, accent }: { title: string; accent: string }) {
+  return (
+    <Text
+      style={[styles.sectionTitle, { color: accent }]}
+      minPresenceAhead={35}
+    >
+      {title}
+    </Text>
+  );
+}
+
+function PdfEntry({
+  title,
+  dates,
+  subtitle,
+  body,
+  bullets = [],
+}: {
+  title: string;
+  dates: string[];
+  subtitle: string[];
+  body?: string;
+  bullets?: string[];
+}) {
+  return (
+    <View style={styles.entry}>
+      <View style={styles.entryHeading} minPresenceAhead={25}>
+        <Text style={styles.role}>{title}</Text>
+        <Text style={styles.dates}>
+          {dates.filter(Boolean).map(formatYearMonth).join(" – ")}
+        </Text>
+      </View>
+      {subtitle.some(Boolean) && (
+        <Text style={styles.company} minPresenceAhead={18}>
+          {subtitle.filter(Boolean).join(" · ")}
+        </Text>
+      )}
+      {body && (
+        <Text orphans={2} widows={2}>
+          {body}
+        </Text>
+      )}
+      {bullets
+        .filter((text) => text.trim())
+        .map((text, index) => (
+          <View key={index} style={styles.bullet}>
+            <Text style={styles.bulletMark}>•</Text>
+            <Text style={styles.bulletText} orphans={2} widows={2}>
+              {text}
+            </Text>
+          </View>
+        ))}
+    </View>
+  );
+}
+
+function AdditionalPdfSection({
+  resume,
+  section,
+  accent,
+}: {
+  resume: Resume;
+  section: AdditionalSection;
+  accent: string;
+}) {
+  if (!resume[section].length) return null;
+  if (section === "projects")
+    return (
+      <>
+        <PdfSectionTitle title="Projects" accent={accent} />
+        {resume.projects.map((entry) => (
+          <PdfEntry
+            key={entry.id}
+            title={entry.name}
+            dates={[entry.startDate, entry.endDate]}
+            subtitle={[entry.role, entry.url]}
+            bullets={entry.bullets}
+          />
+        ))}
+      </>
+    );
+  if (section === "certifications")
+    return (
+      <>
+        <PdfSectionTitle title="Certifications" accent={accent} />
+        {resume.certifications.map((entry) => (
+          <PdfEntry
+            key={entry.id}
+            title={entry.name}
+            dates={[entry.date]}
+            subtitle={[entry.issuer, entry.credentialUrl]}
+          />
+        ))}
+      </>
+    );
+  if (section === "awards")
+    return (
+      <>
+        <PdfSectionTitle title="Awards" accent={accent} />
+        {resume.awards.map((entry) => (
+          <PdfEntry
+            key={entry.id}
+            title={entry.title}
+            dates={[entry.date]}
+            subtitle={[entry.issuer]}
+            body={entry.description}
+          />
+        ))}
+      </>
+    );
+  if (section === "volunteer")
+    return (
+      <>
+        <PdfSectionTitle title="Volunteer Experience" accent={accent} />
+        {resume.volunteer.map((entry) => (
+          <PdfEntry
+            key={entry.id}
+            title={entry.role}
+            dates={[entry.startDate, entry.endDate]}
+            subtitle={[entry.organization]}
+            bullets={entry.bullets}
+          />
+        ))}
+      </>
+    );
+  if (section === "publications")
+    return (
+      <>
+        <PdfSectionTitle title="Publications" accent={accent} />
+        {resume.publications.map((entry) => (
+          <PdfEntry
+            key={entry.id}
+            title={entry.title}
+            dates={[entry.date]}
+            subtitle={[entry.publisher, entry.url]}
+          />
+        ))}
+      </>
+    );
+  return (
+    <>
+      <PdfSectionTitle title="Languages" accent={accent} />
+      <Text>
+        {resume.languages
+          .map((entry) =>
+            [entry.name, entry.proficiency].filter(Boolean).join(" — "),
+          )
+          .join("  ·  ")}
+      </Text>
+    </>
   );
 }
 

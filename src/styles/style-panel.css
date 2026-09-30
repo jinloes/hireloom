@@ -1,0 +1,122 @@
+.style-content > .muted {
+  font-size: 11px;
+  line-height: 1.9;
+  color: #8c9981;
+}
+.control-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #738b60;
+  margin: 28px 0 14px;
+}
+.template-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.template-option {
+  text-align: left;
+  padding: 10px;
+  border: 1px solid #e2e8d8;
+  border-radius: 7px;
+  min-width: 0;
+}
+.template-option.selected {
+  border-color: #8ca972;
+  background: #f5f8ed;
+  box-shadow: 0 0 0 1px #8ca972;
+}
+.mini-paper {
+  background: white;
+  border: 1px solid #e5eadc;
+  padding: 15px 10px;
+  height: 152px;
+  color: #4a673c;
+  box-shadow: 0 2px 5px #405c2410;
+}
+.mini-paper strong {
+  display: block;
+  font-family: var(--serif);
+  font-size: 11px;
+  margin-bottom: 5px;
+}
+.mini-paper.modern strong {
+  font-family: "Noto Sans", sans-serif;
+}
+.mini-paper span {
+  font-size: 4px;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 13px;
+}
+.mini-paper i {
+  display: block;
+  height: 3px;
+  background: #e9ede2;
+  margin-bottom: 5px;
+}
+.mini-paper i:nth-last-child(1) {
+  width: 65%;
+}
+.mini-paper b {
+  font-size: 5px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  display: block;
+  margin: 13px 0 6px;
+}
+.template-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 11px 0 3px;
+  font-size: 11px;
+  color: #5e784e;
+}
+.template-option small {
+  font-size: 8px;
+  color: #8c9b7c;
+}
+.accent-options {
+  display: flex;
+  gap: 20px;
+}
+.accent-option {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 9px;
+  font-size: 9px;
+  text-transform: capitalize;
+  color: #7c8d6d;
+  padding: 4px;
+}
+.accent-option > span {
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  border: 3px solid white;
+  border-radius: 50%;
+  color: white;
+  box-shadow: 0 0 0 1px #dbe3d1;
+}
+.accent-option[aria-pressed="true"] > span {
+  box-shadow: 0 0 0 2px #91a47e;
+}
+.style-note {
+  margin-top: 29px;
+  padding: 16px;
+  background: #f6f8f0;
+  border: 1px solid #e8eddf;
+  border-radius: 7px;
+  font-size: 10px;
+  color: #788d65;
+  line-height: 1.9;
+}
+.style-note p {
+  margin-top: 8px;
+  color: #8e9c80;
+}

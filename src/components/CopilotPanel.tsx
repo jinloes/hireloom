@@ -10,6 +10,8 @@ import {
 import { jobKeywords, type AiProposal, type Resume } from "../model";
 import { desktop, type CopilotStatus } from "../platform";
 import { Field } from "./Editor";
+import { TargetAudit } from "./TargetAudit";
+import type { AuditFinding } from "../targetAudit";
 
 export function CopilotPanel({
   resume,
@@ -25,6 +27,7 @@ export function CopilotPanel({
   stale,
   onApply,
   onDiscard,
+  onAuditNavigate,
 }: {
   resume: Resume;
   onChange: (resume: Resume) => void;
@@ -39,6 +42,7 @@ export function CopilotPanel({
   stale: boolean;
   onApply: () => void;
   onDiscard: () => void;
+  onAuditNavigate: (target: AuditFinding["target"]) => void;
 }) {
   const keywords = jobKeywords(resume);
   return (
@@ -94,17 +98,64 @@ export function CopilotPanel({
           available usage are required.
         </p>
       </div>
-      <Field
-        label="Job description"
-        value={resume.jobDescription}
-        onChange={(jobDescription) => onChange({ ...resume, jobDescription })}
-        multiline
-        rows={9}
-        maxLength={20_000}
-        placeholder="Paste the job description here to tailor your summary and experience highlights to the role…"
-        hint="Optional. Leave this blank for a general resume polish."
-      />
-      {resume.jobDescription.trim() && (
+      <section className="target-job-card" aria-labelledby="target-job-heading">
+        <h3 id="target-job-heading">Target job</h3>
+        <div className="field-grid">
+          <Field
+            id="target-job-title"
+            label="Role title"
+            value={resume.targetJob.title}
+            onChange={(title) =>
+              onChange({
+                ...resume,
+                targetJob: { ...resume.targetJob, title },
+              })
+            }
+          />
+          <Field
+            id="target-job-company"
+            label="Company"
+            value={resume.targetJob.company}
+            onChange={(company) =>
+              onChange({
+                ...resume,
+                targetJob: { ...resume.targetJob, company },
+              })
+            }
+          />
+        </div>
+        <Field
+          id="target-job-source-url"
+          label="Job-posting URL"
+          type="url"
+          value={resume.targetJob.sourceUrl}
+          onChange={(sourceUrl) =>
+            onChange({
+              ...resume,
+              targetJob: { ...resume.targetJob, sourceUrl },
+            })
+          }
+          hint="Stored locally for reference. It is not shown on the resume or sent to Copilot."
+        />
+        <Field
+          id="target-job-description"
+          label="Job description"
+          value={resume.targetJob.description}
+          onChange={(description) =>
+            onChange({
+              ...resume,
+              targetJob: { ...resume.targetJob, description },
+            })
+          }
+          multiline
+          rows={9}
+          maxLength={20_000}
+          placeholder="Paste the job description here to tailor your summary and experience highlights to the role…"
+          hint="Optional. Leave this blank for a general resume polish."
+        />
+      </section>
+      <TargetAudit resume={resume} onNavigate={onAuditNavigate} />
+      {resume.targetJob.description.trim() && (
         <div className="keyword-card">
           <div className="card-heading">
             <strong>Keyword overlap</strong>
@@ -167,7 +218,7 @@ export function CopilotPanel({
         )}
         {busy === "generate"
           ? "Finding your best words…"
-          : resume.jobDescription.trim()
+          : resume.targetJob.description.trim()
             ? "Tailor to this role"
             : "Polish my resume"}
       </button>

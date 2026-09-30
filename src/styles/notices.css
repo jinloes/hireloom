@@ -1,0 +1,74 @@
+.license-dialog {
+  max-width: 630px;
+  max-height: 80vh;
+}
+.license-dialog pre {
+  font-size: 11px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+.field label {
+  font-size: 11px;
+  color: #627158;
+}
+.field input,
+.field textarea {
+  font-size: 12px;
+}
+.workspace-heading p,
+.field-hint,
+.empty-hint,
+.setup-note,
+.fine-print,
+.consent-check,
+.privacy-note p,
+.style-note p {
+  color: #65745a !important;
+}
+.fine-print,
+.consent-check,
+.privacy-note p,
+.field-hint {
+  font-size: 10px !important;
+}
+.notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 15px 35px -10px;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  gap: 12px;
+}
+.notice > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.notice.success {
+  background: #eaf1e4;
+  border: 1px solid #d9e5d0;
+  color: #4e6e43;
+}
+.notice.error,
+.save-error {
+  background: #fff1e9;
+  border: 1px solid #ecd1bf;
+  color: #975339;
+}
+.save-error {
+  padding: 13px;
+  margin: 16px 35px;
+  border-radius: 6px;
+  font-size: 11px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 15px;
+}
+.save-error > span {
+  flex: 1 1 100%;
+}
+.save-error .text-button {
+  color: #935332;
+}

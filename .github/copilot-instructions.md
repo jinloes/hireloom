@@ -13,17 +13,20 @@ Read `AGENTS.md` before making changes. Use `CODE_MAP.md` to find ownership and
   applying them. Never invent work history, qualifications, or metrics.
 - Do not broaden Tauri permissions or give the Copilot subprocess tools, shell
   access, user project context, or ambient Copilot configuration.
-- Use the schemas in `src/model.ts` and matching Rust types as the persistence and
-  IPC contract. Validate imports and AI output; surface errors rather than
+- Use the schemas in `src/model.ts` and matching Rust types in
+  `src-tauri/src/contract.rs` as the persistence and IPC contract. Validate imports and AI output; surface errors rather than
   replacing corrupt files with an empty workspace.
 - Keep PDF output selectable text, locally generated, and single-column. Bundle
   font assets and their licenses; do not use remote font URLs.
 - Preserve accessibility: labeled fields, keyboard navigation, visible focus,
   reduced-motion support, and meaningful live status messages.
-- Run `npm test`, `npm run build`, and `cargo test --manifest-path
+- After all code changes are done, run `npm run format:all`. Then run `npm test`,
+  `npm run lint`, `npm run build`, and `cargo test --manifest-path
 src-tauri/Cargo.toml` for relevant changes. Browser flows use `npm run test:e2e`.
 - Do not commit resumes, exported documents, tokens, app data, or generated build
   artifacts. Do not make live Copilot calls as part of automated tests.
+- Keep files under about 20 KB so agents can read them whole; split by
+  responsibility instead of growing large files.
 - Treat documentation as part of the change. Before finishing, update `README.md`,
   `ARCHITECTURE.md`, `CODE_MAP.md`, and `AGENTS.md` wherever the code change
   affects their setup, behavior, boundaries, file ownership, or workflow.
