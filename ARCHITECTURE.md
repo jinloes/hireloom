@@ -126,6 +126,7 @@ browser behavior. Its desktop methods invoke these React-initiated commands:
 - `analyze_accomplishment`: validated transient APR feedback and direct rewrite options, optionally focused by a matching weak review.
 - `refine_accomplishment`: feedback-guided replacement APR option set.
 - `review_highlights`: one batched, diagnosis-only APR verdict per sent highlight.
+- `draft_highlights`: one to five fact-bound highlight drafts from transient notes and the job title, bound to the exact local target; see [Drafting highlights from notes](README.md#drafting-highlights-from-notes).
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.

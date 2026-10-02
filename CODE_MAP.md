@@ -38,6 +38,11 @@ State and domain logic:
 - `src/useHighlightGuidance.ts`: transient inline highlight guidance
   (analyze, refine, select, apply) and resume-wide highlight review state,
   target staleness, and the Editor guidance/review controllers.
+- `src/useHighlightDrafts.ts`: transient draft-from-notes state (owner,
+  notes, consent, drafts, selection), exact-target staleness, in-flight result
+  discard, append, and the Editor drafts controller.
+- `src/highlightDrafts.ts`: Zod draft target/response schemas with UTF-8
+  limits, exact target binding, and `appendDraftedHighlights`.
 - `src/useResumeGeneration.ts`: whole-resume proposal consent, request, stale
   guard, apply, and discard.
 - `src/useWorkspaceTransfer.ts`: local PDF export plus workspace backup export
@@ -73,11 +78,14 @@ Content editing (`src/components/`):
   insertion and selection.
 - `editor/ExperienceEditor.tsx`: selected experience fields, highlight list,
   reordering, removal requests, guidance placement, and review badges.
+- `editor/HighlightDrafts.tsx`: draft-from-notes panel with notes field,
+  data disclosure, per-request consent, draft checklist, and add/discard
+  controls.
 - `editor/HighlightReviewAction.tsx`: consented resume-wide highlight review
   control and status.
 - `editor/fields.tsx`: shared `Field`, month/year pickers, and entry controls.
 - `editor/helpers.ts`: pure date, title, reorder, and factory helpers.
-- `editor/types.ts`: shared editor and review controller types.
+- `editor/types.ts`: shared editor, review, and drafts controller types.
 - `HighlightGuidance.tsx`: bounded per-highlight disclosure, per-request
   consent, weak review-status disclosure, factual dimensions, direct rewrite
   options, freeform refinement feedback, accessible selection, and apply or keep
@@ -106,12 +114,13 @@ Each module is kept under about 20 KB and holds its own `#[cfg(test)]` tests.
 
 - `contract.rs`: the Rust half of the persistence/IPC contract. `Resume`,
   `Workspace`, `AiProposal`, APR target/analysis/option and highlight review
-  DTOs, enums, `CommandResult`, size/count limits, timeouts, and the
+  DTOs, highlight draft target/response DTOs, enums, `CommandResult`, size/count limits, timeouts, and the
   `GENERATE_RESUME_MODEL` / `INLINE_APR_MODEL` routes.
 - `commands.rs`: `AppState` locks and every `#[tauri::command]`
   (`load_workspace`, `save_workspace`, `export_document`, `copilot_status`,
   `copilot_login`, `generate_resume`, `analyze_accomplishment`,
-  `refine_accomplishment`, `review_highlights`) plus `ensure_consent`.
+  `refine_accomplishment`, `review_highlights`, `draft_highlights`) plus
+  `ensure_consent`.
 - `persistence.rs`: `workspace_path`, version-1 migration,
   `load_workspace_from_path`, `serialize_valid_workspace`, restricted
   directories, `write_atomic`, and platform-specific `replace_path`.
@@ -120,6 +129,8 @@ Each module is kept under about 20 KB and holds its own `#[cfg(test)]` tests.
   `validate_highlight_review_targets`), and export validators.
 - `ai/mod.rs`: `*_with_copilot` request orchestration, model routing, and local
   target binding (`bind_highlight_reviews`); hosts the model-routing test.
+- `ai/drafts.rs`: draft-from-notes target validation, untrusted-data prompt,
+  and strict response parsing, with its own tests.
 - `ai/prompts.rs`: whole-resume, APR analysis, APR refinement, and highlight
   review prompt builders with contact redaction and untrusted-data framing.
 - `ai/responses.rs`: strict parsing and validation of Copilot proposals, APR
@@ -157,6 +168,8 @@ Related native configuration:
 - `src/model.test.ts`: workspace validation, whole-resume and APR option
   contracts, UTF-8 limits, batch highlight review target binding, atomic
   one/two-bullet application invariants, readiness, keywords, and filenames.
+- `src/highlightDrafts.test.ts`: draft schemas, UTF-8 limits, target binding,
+  append order/limits, and `platform.draftHighlights` desktop/consent guards.
 - `src/targetAudit.test.ts`: deterministic audit setup, evidence, alignment,
   URL, and chronology findings.
 - `src/App.<area>.test.tsx`: React workflows against the rendered App with a
@@ -164,15 +177,16 @@ Related native configuration:
   selection, highlight reordering), `persistence` (load/save failures,
   serialized saves), `removal` (cross-mode item-removal recovery), `copilot`
   (whole-resume consent and AI errors), `guidance` (inline options, refinement,
-  staleness, exact apply/keep/undo), and `review` (batch review consent gating,
-  badges, and staleness).
+  staleness, exact apply/keep/undo), `review` (batch review consent gating,
+  badges, and staleness), and `drafts` (draft-from-notes consent, selection,
+  append/undo, staleness, and panel resets).
 - `src/test/appHarness.tsx`: shared App test fixtures and platform mock helpers;
   each test file keeps its own hoisted `vi.mock` calls.
 - `src/test/setup.ts`: Vitest DOM setup and cleanup.
 - Native `#[cfg(test)]` modules beside the code they cover: validation and
   consent (`validation.rs`, `commands.rs`), atomic writes (`persistence.rs`),
   isolated Copilot config (`copilot/profile.rs`), prompt boundaries
-  (`ai/prompts.rs`), model routing (`ai/mod.rs`), locked-down SDK configuration
+  (`ai/prompts.rs`, `ai/drafts.rs`), model routing (`ai/mod.rs`), locked-down SDK configuration
   and final-response bounds (`copilot/sdk.rs`), typed response validation
   (`ai/responses.rs`), and Unix-only subprocess isolation/errors
   (`copilot/cli.rs`, `process.rs`).
@@ -182,7 +196,7 @@ Related native configuration:
   master-detail), `removal-undo`, `documents` (example, design, backups,
   duplicate/delete, corrupt data, malformed imports), `pdf` (ATS-relevant
   order/content, pagination), and `copilot-preview` (desktop-only highlight
-  review negative control). Shared helpers live in `e2e/helpers.ts`.
+  review and drafting negative controls). Shared helpers live in `e2e/helpers.ts`.
 
 ## Tooling and automation
 

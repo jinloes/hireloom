@@ -1,7 +1,11 @@
 import { Plus } from "lucide-react";
 import type { Experience, Resume } from "../../model";
 import type { HighlightGuidanceController } from "../HighlightGuidance";
-import type { ContentRemovalRequest, HighlightReviewController } from "./types";
+import type {
+  ContentRemovalRequest,
+  HighlightDraftsController,
+  HighlightReviewController,
+} from "./types";
 import { experienceDateRange, experienceTitle } from "./helpers";
 import { ExperienceEditor } from "./ExperienceEditor";
 import { HighlightReviewAction } from "./HighlightReviewAction";
@@ -17,6 +21,7 @@ type ExperienceSectionProps = {
   selectExperience: (id: string) => void;
   highlightGuidance: HighlightGuidanceController;
   highlightReview: HighlightReviewController;
+  highlightDrafts: HighlightDraftsController;
 };
 
 export function ExperienceSection({
@@ -30,6 +35,7 @@ export function ExperienceSection({
   selectExperience,
   highlightGuidance,
   highlightReview,
+  highlightDrafts,
 }: ExperienceSectionProps) {
   return (
     <div className="section-fields experience-section-fields">
@@ -86,6 +92,7 @@ export function ExperienceSection({
               experience={experience}
               highlightGuidance={highlightGuidance}
               highlightReview={highlightReview}
+              highlightDrafts={highlightDrafts}
             />
           )}
         </div>

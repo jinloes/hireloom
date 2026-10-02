@@ -1,8 +1,10 @@
 //! AI request orchestration: prompt, model route, response parsing, and local target binding.
 
+mod drafts;
 mod prompts;
 mod responses;
 
+pub(crate) use drafts::validate_highlight_draft_target;
 pub(crate) use responses::{validate_apr_options, validate_apr_options_changed};
 
 #[cfg(all(test, unix))]
@@ -11,6 +13,7 @@ pub(crate) use responses::parse_ai_proposal;
 pub(crate) use responses::parse_apr_response;
 
 use crate::{contract::*, copilot::run_copilot_prompt, validation::*};
+use drafts::*;
 use prompts::*;
 use responses::*;
 use tauri::AppHandle;
@@ -78,6 +81,21 @@ pub(crate) async fn review_highlights_with_copilot(
     bind_highlight_reviews(targets, verdicts)
 }
 
+pub(crate) async fn draft_highlights_with_copilot(
+    app: &AppHandle,
+    target: &HighlightDraftTarget,
+) -> CommandResult<HighlightDraft> {
+    let prompt = build_highlight_draft_prompt(target)?;
+    let bullets = parse_highlight_draft_response(
+        &run_copilot_prompt(app, &prompt, INLINE_APR_MODEL).await?,
+        &target.notes,
+    )?;
+    Ok(HighlightDraft {
+        target: target.clone(),
+        bullets,
+    })
+}
+
 pub(crate) fn bind_highlight_reviews(
     targets: &[AprTarget],
     verdicts: Vec<HighlightReviewVerdict>,
@@ -129,5 +147,14 @@ mod tests {
         assert!(!generation.contains("INLINE_APR_MODEL"));
         assert!(analysis.contains("run_copilot_prompt(app, &prompt, INLINE_APR_MODEL)"));
         assert!(!analysis.contains("GENERATE_RESUME_MODEL"));
+        let drafts = source
+            .split_once("async fn draft_highlights_with_copilot")
+            .expect("draft function")
+            .1
+            .split_once("fn bind_highlight_reviews")
+            .expect("draft function boundary")
+            .0;
+        assert!(drafts.contains("run_copilot_prompt(app, &prompt, INLINE_APR_MODEL)"));
+        assert!(!drafts.contains("GENERATE_RESUME_MODEL"));
     }
 }

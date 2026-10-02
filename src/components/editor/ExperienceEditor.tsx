@@ -1,10 +1,15 @@
-import { Plus, Sparkles } from "lucide-react";
+import { NotebookPen, Plus, Sparkles } from "lucide-react";
 import type { Experience, Resume } from "../../model";
 import {
   HighlightGuidance,
   type HighlightGuidanceController,
 } from "../HighlightGuidance";
-import type { ContentRemovalRequest, HighlightReviewController } from "./types";
+import type {
+  ContentRemovalRequest,
+  HighlightDraftsController,
+  HighlightReviewController,
+} from "./types";
+import { HighlightDrafts } from "./HighlightDrafts";
 import { EntryControls, Field, MonthField } from "./fields";
 import { experienceTitle, move } from "./helpers";
 
@@ -31,6 +36,7 @@ type ExperienceEditorProps = {
   experience: (id: string, patch: Partial<Experience>) => void;
   highlightGuidance: HighlightGuidanceController;
   highlightReview: HighlightReviewController;
+  highlightDrafts: HighlightDraftsController;
 };
 
 export function ExperienceEditor({
@@ -42,7 +48,12 @@ export function ExperienceEditor({
   experience,
   highlightGuidance,
   highlightReview,
+  highlightDrafts,
 }: ExperienceEditorProps) {
+  const draftsOpen =
+    highlightDrafts.owner?.resumeId === resume.id &&
+    highlightDrafts.owner.experienceId === selectedExperience.id;
+  const draftsRegionId = `highlight-drafts-${selectedExperienceIndex}`;
   return (
     <div
       className="entry-card selected-experience-editor"
@@ -226,6 +237,26 @@ export function ExperienceEditor({
       >
         <Plus size={14} /> Add highlight
       </button>
+      <button
+        className="text-button highlight-help-button"
+        aria-expanded={draftsOpen}
+        aria-controls={draftsRegionId}
+        onClick={() =>
+          highlightDrafts.onToggle({
+            resumeId: resume.id,
+            experienceId: selectedExperience.id,
+          })
+        }
+      >
+        <NotebookPen size={13} /> Draft highlights from notes
+      </button>
+      {draftsOpen && (
+        <HighlightDrafts
+          controller={highlightDrafts}
+          regionId={draftsRegionId}
+          role={selectedExperience.role}
+        />
+      )}
     </div>
   );
 }

@@ -12,8 +12,8 @@ mod validation;
 
 pub use contract::{
     Accent, AiProposal, AprAnalysis, AprDimension, AprOption, AprOptionId, AprStatus, AprTarget,
-    Basics, CopilotStatus, Education, Experience, ExportKind, HighlightReview, ProposalExperience,
-    Resume, Template, Workspace,
+    Basics, CopilotStatus, Education, Experience, ExportKind, HighlightDraft, HighlightDraftTarget,
+    HighlightReview, ProposalExperience, Resume, Template, Workspace,
 };
 
 use commands::*;
@@ -33,7 +33,8 @@ pub fn run() {
             generate_resume,
             analyze_accomplishment,
             refine_accomplishment,
-            review_highlights
+            review_highlights,
+            draft_highlights
         ])
         .build(tauri::generate_context!())
         .expect("error while building Hireloom");

@@ -9,6 +9,7 @@ import {
 import { copilotStatus, loginToCopilot, type CopilotStatus } from "./platform";
 import { useWorkspace } from "./useWorkspace";
 import { useHighlightGuidance } from "./useHighlightGuidance";
+import { useHighlightDrafts } from "./useHighlightDrafts";
 import { useResumeGeneration } from "./useResumeGeneration";
 import { useWorkspaceTransfer } from "./useWorkspaceTransfer";
 import {
@@ -66,7 +67,14 @@ function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [copilot, setCopilot] = useState<CopilotStatus | null>(null);
   const [busy, setBusy] = useState<
-    "status" | "login" | "generate" | "analyze" | "refine" | "review" | null
+    | "status"
+    | "login"
+    | "generate"
+    | "analyze"
+    | "refine"
+    | "review"
+    | "draft"
+    | null
   >("status");
   const [undo, setUndo] = useState<Resume | null>(null);
   const [contentViews, setContentViews] = useState<
@@ -95,12 +103,13 @@ function App() {
     busy === "analyze" ||
     busy === "refine" ||
     busy === "review" ||
+    busy === "draft" ||
     busy === "login";
   // `HighlightGuidance` and `CopilotPanel` are reference-only panels that do not
   // know about the batch review request. Map it onto an existing truthy value so
   // their controls stay disabled while a review runs, without widening or
   // contradicting their own busy vocabulary.
-  const panelBusy = busy === "review" ? "status" : busy;
+  const panelBusy = busy === "review" || busy === "draft" ? "status" : busy;
 
   const report = (error: unknown) =>
     setNotice({ kind: "error", text: errorMessage(error) });
@@ -126,6 +135,16 @@ function App() {
     announce: announceContentStatus,
   });
   const { resetApr, resetHighlightReviews } = highlights;
+  const drafts = useHighlightDrafts({
+    resume,
+    status: copilot,
+    busy,
+    setBusy,
+    report,
+    notify: setNotice,
+    changeResume,
+    setUndo,
+  });
   const generation = useResumeGeneration({
     resume,
     setBusy,
@@ -146,6 +165,7 @@ function App() {
         setUndo(null);
         resetApr();
         resetHighlightReviews();
+        drafts.reset();
         setLibrary(false);
       },
     });
@@ -214,6 +234,7 @@ function App() {
           .selectedExperienceId
     ) {
       resetApr();
+      drafts.reset();
     }
 
     if (!resume) return;
@@ -248,7 +269,10 @@ function App() {
         },
       }));
     }
-    if (change.resetsGuidance) resetApr();
+    if (change.resetsGuidance) {
+      resetApr();
+      drafts.reset();
+    }
     commitResume(change.next);
     setUndo(null);
   }
@@ -292,6 +316,7 @@ function App() {
     setUndo(null);
     setContentRemoval(null);
     resetHighlightReviews();
+    drafts.reset();
   }
 
   function addResume(next = createResume()) {
@@ -315,6 +340,7 @@ function App() {
     setContentRemoval(null);
     resetApr();
     resetHighlightReviews();
+    drafts.reset();
   }
 
   async function login() {
@@ -349,6 +375,7 @@ function App() {
     generation.reset();
     resetApr();
     resetHighlightReviews();
+    drafts.reset();
     setUndo(null);
     setContentRemoval(null);
     setContentViews((current) => {
@@ -498,6 +525,7 @@ function App() {
                     onFocusTargetHandled={() => setContentFocusTarget(null)}
                     highlightGuidance={highlights.guidance}
                     highlightReview={highlights.review}
+                    highlightDrafts={drafts.controller}
                   />
                 </div>
                 <div

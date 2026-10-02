@@ -226,3 +226,25 @@
   color: #a4633e;
   margin: 10px 0;
 }
+.highlight-drafts {
+  display: grid;
+  gap: 9px;
+}
+.highlight-drafts > label:first-of-type {
+  font-weight: 700;
+}
+.highlight-drafts textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.highlight-drafts textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.highlight-drafts > .button {
+  justify-self: start;
+}
+.highlight-draft-list .highlight-option-copy {
+  color: #37513a;
+  font-size: 10px;
+}

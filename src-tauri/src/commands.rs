@@ -188,6 +188,29 @@ pub(crate) async fn review_highlights(
     review_highlights_with_copilot(&app, &targets).await
 }
 
+#[tauri::command]
+pub(crate) async fn draft_highlights(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    resume_id: String,
+    experience_id: String,
+    role: String,
+    notes: String,
+    consent: bool,
+) -> CommandResult<HighlightDraft> {
+    ensure_consent(consent)?;
+    let target = HighlightDraftTarget {
+        resume_id,
+        experience_id,
+        role,
+        notes,
+    };
+    validate_highlight_draft_target(&target)?;
+    let generation_lock = state.generation_lock.clone();
+    let _guard = generation_lock.lock().await;
+    draft_highlights_with_copilot(&app, &target).await
+}
+
 pub(crate) fn ensure_consent(consent: bool) -> CommandResult<()> {
     if consent {
         Ok(())

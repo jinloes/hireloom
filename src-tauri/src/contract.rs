@@ -23,6 +23,8 @@ pub(crate) const MAX_JOB_DESCRIPTION_BYTES: usize = 20_000;
 pub(crate) const MAX_BULLET_BYTES: usize = 2_000;
 pub(crate) const MAX_PROPOSAL_NOTES: usize = 20;
 pub(crate) const MAX_APR_OPTIONS: usize = 3;
+pub(crate) const MAX_DRAFT_NOTES_BYTES: usize = 4_000;
+pub(crate) const MAX_DRAFT_BULLETS: usize = 5;
 pub(crate) const GENERATE_RESUME_MODEL: &str = "gpt-5.6-luna";
 pub(crate) const INLINE_APR_MODEL: &str = "gemini-3.8-flash";
 pub(crate) const COPILOT_TIMEOUT: Duration = Duration::from_secs(180);
@@ -308,6 +310,28 @@ pub(crate) struct HighlightReviewVerdict {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct HighlightReviewResponse {
     pub(crate) reviews: Vec<HighlightReviewVerdict>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HighlightDraftTarget {
+    pub resume_id: String,
+    pub experience_id: String,
+    pub role: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HighlightDraft {
+    pub target: HighlightDraftTarget,
+    pub bullets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct HighlightDraftResponse {
+    pub(crate) bullets: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -18,6 +18,12 @@ import {
   aprRefinementSchema,
   workspaceSchema,
 } from "./model";
+import {
+  type HighlightDraft,
+  type HighlightDraftTarget,
+  validateHighlightDraft,
+  validateHighlightDraftTarget,
+} from "./highlightDrafts";
 
 export const desktop = isTauri();
 export const STORAGE_KEY = "hireloom.workspace.v1";
@@ -167,6 +173,23 @@ export async function reviewHighlights(
       consent,
     }),
     validTargets,
+  );
+}
+
+export async function draftHighlights(
+  target: HighlightDraftTarget,
+  consent: boolean,
+): Promise<HighlightDraft> {
+  if (!desktop)
+    throw new Error("Drafting highlights requires the desktop app.");
+  if (!consent)
+    throw new Error(
+      "Confirm that you want to send these notes to GitHub Copilot.",
+    );
+  const validTarget = validateHighlightDraftTarget(target);
+  return validateHighlightDraft(
+    await invoke<unknown>("draft_highlights", { ...validTarget, consent }),
+    validTarget,
   );
 }
 

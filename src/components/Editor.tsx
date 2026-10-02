@@ -21,6 +21,7 @@ import type {
   ContentRemovalRequest,
   ContentSection,
   ContentViewState,
+  HighlightDraftsController,
   HighlightReviewController,
 } from "./editor/types";
 export { Field } from "./editor/fields";
@@ -77,6 +78,7 @@ export function Editor({
   onExample,
   highlightGuidance,
   highlightReview,
+  highlightDrafts,
   viewState,
   onViewStateChange,
   onRemove,
@@ -89,6 +91,7 @@ export function Editor({
   onExample: () => void;
   highlightGuidance: HighlightGuidanceController;
   highlightReview: HighlightReviewController;
+  highlightDrafts: HighlightDraftsController;
   viewState: ContentViewState;
   onViewStateChange: (state: ContentViewState) => void;
   onRemove: (request: ContentRemovalRequest) => void;
@@ -164,6 +167,9 @@ export function Editor({
       highlightGuidance.target?.resumeId === resume.id
     ) {
       highlightGuidance.onKeep();
+    }
+    if (viewState.selectedExperienceId !== id && highlightDrafts.owner) {
+      highlightDrafts.onDiscard();
     }
     onViewStateChange({ ...viewState, selectedExperienceId: id });
   };
@@ -300,6 +306,7 @@ export function Editor({
               selectExperience={selectExperience}
               highlightGuidance={highlightGuidance}
               highlightReview={highlightReview}
+              highlightDrafts={highlightDrafts}
             />
           )}
           {viewState.section === "education" && (

@@ -20,6 +20,7 @@ export function platformMock() {
     analyzeAccomplishment: vi.fn(),
     refineAccomplishment: vi.fn(),
     reviewHighlights: vi.fn(),
+    draftHighlights: vi.fn(),
     generateResume: vi.fn(),
     loginToCopilot: vi.fn(),
   };

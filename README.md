@@ -47,7 +47,8 @@ connect to Copilot. It does not read your desktop workspace.
   field. It is not an ATS score or hiring prediction.
 - In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
   review, multiple fact-bound highlight options, a resume-wide weak-highlight
-  review, stale-result protection, and one-step undo until the next edit.
+  review, highlight drafting from rough notes, stale-result protection, and
+  one-step undo until the next edit.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details or click **try a fictional example**. The example
@@ -81,7 +82,7 @@ requests are denied. The subprocess retains your real OS home only so the CLI
 can use the system credential store; Copilot, GitHub CLI, cache, temporary, and
 working files remain redirected to Hireloom-owned directories. Status and login
 continue to invoke the installed CLI directly. Whole-resume requests are pinned to
-`gpt-5.6-luna`, while inline highlight analysis is pinned to
+`gpt-5.6-luna`, while inline highlight analysis and drafting are pinned to
 `gemini-3.8-flash`. If the required model is unavailable to the
 signed-in account or installed CLI, the request fails visibly without retrying
 another model. The SDK waits for the final typed assistant message, accepts
@@ -166,9 +167,33 @@ highlight, or switching resumes, clears its badge. A resume whose assembled
 request would exceed the prompt size limit is refused with an actionable message
 instead of being truncated or reviewed in parts.
 
-In the browser preview, inline help and **Review all highlights** remain
-discoverable but clearly report that they are desktop-only. Their consent and
-send controls are disabled while the highlights remain locally editable.
+### Drafting highlights from notes
+
+Under a job's highlights, **Draft highlights from notes** opens a panel for
+rough notes about that job (up to 4,000 UTF-8 bytes). A separate, initially
+unchecked consent is required for every request, and it clears whenever the
+notes change. Only the notes and the job title are sent to GitHub Copilot on the
+`gemini-3.8-flash` route; resume and experience IDs stay local. Remove contact
+details from your notes before sending. Notes and drafts are transient and are
+never saved.
+
+Gemini is instructed to use only the facts in your notes and never invent work,
+scope, ownership, outcomes, or metrics. It returns one to five distinct,
+single-line highlights. Nothing is selected automatically: review every claim,
+check the drafts you want, then use **Add selected highlights** to append them,
+in displayed order, to the end of that job's highlights. The 30-highlight limit
+still applies, and the existing one-step AI undo restores the previous
+highlights. **Discard** closes the panel without editing.
+
+Editing the notes or the job title after drafting makes the drafts stale and
+blocks adding them until you draft again. Switching jobs, removing the job,
+switching, adding, removing, or importing resumes clears the notes, consent,
+and drafts. Request failures show an error and leave your resume unchanged.
+
+In the browser preview, inline help, **Review all highlights**, and highlight
+drafting remain discoverable but clearly report that they are desktop-only.
+Their consent and send controls are disabled while the highlights remain
+locally editable.
 
 ## Privacy and storage
 
@@ -187,7 +212,8 @@ send controls are disabled while the highlights remain locally editable.
   and returns only weak/clear verdicts, never rewrites. An eligible unchanged
   weak verdict may add only its Action, Project, and Impact status values to
   that highlight's separately consented initial guidance request; local IDs and
-  positions never leave the app.
+  positions never leave the app. Drafting highlights from notes sends only
+  your transient notes and that job's title.
   Dedicated name, email, phone, personal location, website, GitHub,
   diagnostics/initial rewrite, other resume fields, and local correlation IDs
   are excluded. **Anything you type into free text can still contain

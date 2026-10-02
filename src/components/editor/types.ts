@@ -11,7 +11,34 @@ export type HighlightReviewController = {
   onReview: () => void;
   status: { available: boolean } | null;
   busy:
-    "status" | "login" | "generate" | "analyze" | "refine" | "review" | null;
+    | "status"
+    | "login"
+    | "generate"
+    | "analyze"
+    | "refine"
+    | "review"
+    | "draft"
+    | null;
+};
+
+export type HighlightDraftOwner = { resumeId: string; experienceId: string };
+
+export type HighlightDraftsController = {
+  owner: HighlightDraftOwner | null;
+  onToggle: (owner: HighlightDraftOwner) => void;
+  onDiscard: () => void;
+  notes: string;
+  onNotes: (value: string) => void;
+  consent: boolean;
+  onConsent: (value: boolean) => void;
+  onDraft: () => void;
+  bullets: string[] | null;
+  selected: number[];
+  onSelect: (index: number, checked: boolean) => void;
+  stale: boolean;
+  onApply: () => void;
+  status: { available: boolean } | null;
+  busy: HighlightReviewController["busy"];
 };
 
 export type ContentSection =
