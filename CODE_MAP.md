@@ -1,10 +1,11 @@
 # Hireloom Code Map
 
-This map answers "where does this behavior live?" Every production `.ts`, `.tsx`,
-`.rs`, and `.css` module is intentionally sized `<20 KB` so a single `view`
-reads the complete file without truncation. For architectural reasoning and
-trust boundaries, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Keep this file
-current when files or responsibilities change.
+This map answers "where does this behavior live?" Production `.ts`, `.tsx`,
+`.rs`, and `.css` modules aim to stay near or under ~20 KB along natural domain
+boundaries (as a pragmatic guideline, not a hard cap) so single `view` reads
+rarely truncate. For architectural reasoning and trust boundaries, see
+[`ARCHITECTURE.md`](ARCHITECTURE.md). Keep this file current when files or
+responsibilities change.
 
 ## Runtime entry points
 
@@ -66,7 +67,7 @@ current when files or responsibilities change.
 | `src/components/copilot/AprCoachingSection.tsx`       | APR accomplishment target picker, rubric feedback, Q&A inputs, and initial/refined rewrite comparison     |
 | `src/components/ResumePreview.tsx`                    | Live on-screen resume preview honoring section order, page size, density, and measured page-break markers |
 | `src/components/StylePanel.tsx`                       | Template, accent, page-size (`A4` / `US Letter`), spacing density, and section-order controls             |
-| `src/App.css`                                         | CSS entry sheet importing the four `<20 KB` stylesheets under `src/styles/`                               |
+| `src/App.css`                                         | CSS entry sheet importing the four focused stylesheets under `src/styles/`                                |
 | `src/styles/base-and-editor.css`                      | Core tokens, studio shell baseline, buttons, form controls, and editor card styles                        |
 | `src/styles/preview-and-copilot.css`                  | Resume paper preview, templates, Copilot panel, APR cards, and style-picker styles                        |
 | `src/styles/library-and-v2.css`                       | Resume library, quality checks, word diffs, skill groups, Career Library, and import dialog styles        |
@@ -74,7 +75,7 @@ current when files or responsibilities change.
 
 ## Native backend
 
-`src-tauri/src/` is organized into focused `<20 KB` modules wired by `lib.rs`:
+`src-tauri/src/` is organized into focused domain modules wired by `lib.rs`:
 
 | Location                           | Responsibility                                                                                                                  |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |

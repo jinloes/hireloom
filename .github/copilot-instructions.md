@@ -5,16 +5,18 @@ Rust) with an explicitly labeled browser preview using separate `localStorage`
 and no desktop AI connection.
 
 Follow [`AGENTS.md`](../AGENTS.md) for contributor workflow, context-efficiency
-rules, required checks, and documentation rules. Start with
-[`CODE_MAP.md`](../CODE_MAP.md) to locate the narrowest owning `<20 KB` module;
-consult [`ARCHITECTURE.md`](../ARCHITECTURE.md), [`PRODUCT.md`](../PRODUCT.md),
-and [`README.md`](../README.md) selectively when boundaries, product scope, or
+guidelines, required checks, and documentation rules. Start with
+[`CODE_MAP.md`](../CODE_MAP.md) to locate the narrowest owning module; consult
+[`ARCHITECTURE.md`](../ARCHITECTURE.md), [`PRODUCT.md`](../PRODUCT.md), and
+[`README.md`](../README.md) selectively when boundaries, product scope, or
 setup/privacy behavior are affected.
 
-- **Context efficiency:** Keep production `.ts`/`.tsx`/`.rs`/`.css` modules
-  `<20 KB` so single reads never truncate; scope `glob`/`grep` to `src/**`,
-  `src-tauri/src/**`, or `e2e/**`; use `view_range` on large test files; iterate
-  with targeted tests or `npm run check:fast` before full checks.
+- **Context efficiency:** Treat ~20 KB as a pragmatic guideline (not a hard cap)
+  for production `.ts`/`.tsx`/`.rs`/`.css` modules—split along natural domain or
+  component seams, never at the expense of cohesion or clean design; scope
+  `glob`/`grep` to `src/**`, `src-tauri/src/**`, or `e2e/**`; use `view_range`
+  on larger files; iterate with targeted tests or `npm run check:fast` before
+  full checks.
 - **Privacy & AI safety:** Keep resume data local (no analytics, remote fonts,
   or automatic AI calls). Require explicit per-request consent, exclude contact
   fields from prompts, treat user/job text as untrusted, never invent facts or

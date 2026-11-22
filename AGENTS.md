@@ -9,7 +9,7 @@ files may be added later for subdirectories; the closest file wins.
 Navigate selectively so context stays focused on the task at hand:
 
 1. Read [`CODE_MAP.md`](CODE_MAP.md) first to jump straight to the narrowest
-   owning `<20 KB` module and its paired tests.
+   owning module and its paired tests.
 2. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) when changing boundaries, IPC or
    persistence contracts, trust boundaries, AI isolation, or data flows.
 3. Read [`PRODUCT.md`](PRODUCT.md) when changing user-facing capabilities,
@@ -24,18 +24,21 @@ finishing.
 
 ## Context-window efficiency
 
-Follow these rules to work effectively within a ~264k token context window:
+Use these pragmatic guidelines to work efficiently within a ~264k token context
+window while keeping clean design principles, cohesion, and domain boundaries
+first:
 
-- **Keep production source and style files under 20 KB (~500 lines).** File
-  `view` tools truncate around 20 KB (`20,480` bytes). Every non-test `.ts`,
-  `.tsx`, `.rs`, and `.css` file is intentionally kept `<20 KB` so a single
-  `view` reads the complete module without truncation or multi-range pagination.
-  Split growing modules by domain, hook, or subcomponent before they cross
-  ~20 KB rather than re-accumulating monoliths.
-- **Use `grep -n` + `view_range` on large test files.** Integration and E2E
-  suites (`src/App.test.tsx`, `src/model.test.ts`, `e2e/studio.spec.ts`)
-  can exceed 20 KB; locate relevant `it(...)` / `test(...)` blocks with `grep`
-  and read bounded line ranges instead of loading entire test files.
+- **Aim for ~20 KB (~500 lines) production modules, guided by cohesion—not as a
+  hard cap.** File `view` tools truncate around 20 KB (`20,480` bytes), so
+  keeping non-test `.ts`, `.tsx`, `.rs`, and `.css` modules near or under ~20 KB
+  lets a single `view` read the whole file. Treat ~20 KB as a prompt to look for
+  natural domain, hook, or subcomponent seams rather than re-accumulating
+  monoliths—never split cohesive logic arbitrarily, scatter coupled invariants,
+  or sacrifice sound architecture just to hit a byte limit.
+- **Use `grep -n` + `view_range` on larger files.** Integration/E2E suites
+  (`src/App.test.tsx`, `src/model.test.ts`, `e2e/studio.spec.ts`) or any
+  cohesive module that legitimately grows past 20 KB can be navigated cleanly by
+  locating relevant symbols/blocks with `grep` and reading bounded line ranges.
 - **Always scope `glob` and `grep` queries.** Some `glob` tools ignore
   `.gitignore`/`.ignore` (an unscoped `**/*` enumerates `node_modules` and
   `src-tauri/target`), whereas ripgrep (`grep`) honors `.ignore`. Scope file
@@ -86,8 +89,8 @@ Follow these rules to work effectively within a ~264k token context window:
 
 ## Change workflow
 
-1. Use [`CODE_MAP.md`](CODE_MAP.md) to identify the narrowest owning `<20 KB`
-   module and read it directly.
+1. Use [`CODE_MAP.md`](CODE_MAP.md) to identify the narrowest owning module and
+   read it directly.
 2. Preserve the frontend/native contract when changing persisted or IPC data.
 3. Add or update the smallest relevant test for behavior changes, iterating with
    targeted tests or `npm run check:fast`.

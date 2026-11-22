@@ -62,9 +62,10 @@ Master Career Library sync and tailored variant creation, JSON backup
 import/export, local PDF/DOCX resume import review, PDF and DOCX generation,
 local quality audit display, bounded per-resume undo/redo history, studio theme
 and split-pane/zoom ergonomics, AI status/login/generation, selective proposal
-review, transient APR answers/refinement, and stale-result checks. Every
-production `.ts`, `.tsx`, `.rs`, and `.css` module is kept `<20 KB` so single
-file reads capture complete module context without truncation.
+review, transient APR answers/refinement, and stale-result checks. Production
+`.ts`, `.tsx`, `.rs`, and `.css` modules are organized around cohesive domain
+boundaries—aiming for ~20 KB as a pragmatic guideline rather than a rigid cap—so
+single file reads typically capture complete module context.
 
 Focused components remain controlled by `App`:
 
