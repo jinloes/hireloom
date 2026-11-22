@@ -19,29 +19,48 @@ npm run tauri dev
 ```
 
 `npm run dev` starts a **browser preview** at `http://localhost:1420`. It has
-separate browser-local storage, supports editing and PDF downloads, and cannot
-connect to Copilot. It does not read your desktop workspace.
+separate browser-local storage, supports editing, local PDF/DOCX import and
+downloads, and cannot connect to Copilot. It does not read your desktop
+workspace.
 
 ## What's included
 
-- Multiple resume documents with rename, duplicate, and confirmed deletion.
+- Multiple resume documents with rename, duplicate, confirmed deletion, and a
+  local **Master Career Library** for spinning up role-tailored variants while
+  keeping canonical experience, projects, education, certifications, and skill
+  categories in sync.
+- Local **PDF and Word (`.docx`) resume import** into a reviewable draft before
+  adding to your workspace—no cloud upload or automatic AI call.
 - Personal details including portfolio, LinkedIn, and GitHub URLs; summary;
-  reorderable experience with month/year dates and current-role support;
-  education; and skills.
-- A live preview, Editorial and Modern layouts, and three accent colors.
-- Local autosaving with visible failures, retries, and recovery backup export.
-- A4, selectable-text PDFs with embedded fonts and automatic page overflow.
-- JSON workspace backups and validated, non-destructive imports.
-- Job-description keyword overlap and a transparent resume-essentials checklist.
-- In-app GitHub Copilot sign-in, factual rewriting, explicit consent, suggestion
-  review, per-accomplishment APR analysis and answer-guided refinement,
-  stale-result protection, and one-step undo until the next edit.
+  reorderable experience, **projects**, education, **certifications**,
+  **categorized skill groups** (plus flat skills), **custom sections** (such as
+  Volunteering or Awards), and configurable **section order**.
+- A live preview with estimated page-break markers, **90% / 100% / 125% zoom**,
+  click-to-jump section navigation, a resizable split-pane divider, **light and
+  dark studio themes** (while keeping the resume paper white), Editorial and
+  Modern layouts, three accent colors, **A4 and US Letter** page sizes, and
+  **Compact / Standard / Spacious** density controls.
+- Collapsible editor cards, interactive removable skill chips, bounded
+  multi-step **Undo / Redo** (`Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z`, including
+  one-click recovery on deleted entries and AI rewrites), and local autosaving
+  with visible failures, retries, and recovery backup export.
+- Single-column, selectable-text **PDF** (with embedded fonts) and **Word
+  (`.docx`)** exports.
+- Workspace v2 JSON backups with automatic v1 migration on load and validated,
+  non-destructive imports.
+- Dynamic job-description keyword extraction with **Add skill / Skip / Restore**
+  triage, plus deterministic local **Resume Quality Checks** across
+  Completeness, Impact & Verbs, Formatting & Length, and Role Alignment.
+- In-app GitHub Copilot sign-in, factual rewriting with **word-level diffs and
+  per-item Include / Keep original toggles**, explicit consent, inline and panel
+  APR accomplishment coaching (for both experience and project bullets),
+  answer-guided refinement, stale-result protection, and full toolbar undo/redo.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
-Start with your own details or click **try a fictional example**. The example
-candidate, organizations, and work history are demonstration content, not claims
-about a real person. The app opens to a blank resume and never uploads an example
-or your content automatically.
+Start with your own details, **upload an existing PDF or DOCX resume**, or click
+**try a fictional example**. The example candidate, organizations, and work
+history are demonstration content, not claims about a real person. The app opens
+to a blank resume and never uploads an example or your content automatically.
 
 ## GitHub Copilot
 
@@ -66,21 +85,26 @@ and uses a neutral working directory instead of your projects. The subprocess
 retains your real OS home only so the CLI can use the system credential store;
 Copilot, GitHub CLI, cache, temporary, and working files remain redirected to
 Hireloom-owned directories. Whole-resume and APR requests are pinned to
-`gpt-5.6-luna` for consistent behavior. If that model is unavailable to the
+`claude-sonnet-5.5` with task-calibrated reasoning effort (`medium` for APR
+accomplishment analysis and `low` for answer-guided refinement and whole-resume
+rewrites). If that model is unavailable to the
 signed-in account or installed CLI, the request fails visibly instead of
 silently switching models. Responses use the CLI's JSON event stream so quoted
 feedback remains valid structured data. Hireloom also accepts the CLI's
 commented JSON configuration format while preserving existing settings and
 enforcing its isolation controls.
 
-Add real experience or skills, optionally paste a job description, and check the
-consent box for each request. Copilot proposes a summary and experience
-highlights; it does not modify employer names, dates, education, or skills.
+Add real experience, projects, or skills, optionally paste a job description,
+and check the consent box for each request. Copilot proposes a summary and
+experience/project highlights with inline word-level diffs and per-item
+selection toggles; it does not modify employer names, project names, URLs,
+dates, education, certifications, or skills.
 **Review every claim before applying.** AI can still make mistakes or invent
 details. Suggestions are never silently applied. CLI errors, expired login,
 malformed output, and the three-minute timeout leave your resume unchanged.
 
-The **Analyze accomplishments** section reviews one nonempty experience bullet
+The **Analyze accomplishments** section (and inline **Coach with APR** buttons
+in the editor) reviews one nonempty experience or project bullet
 at a time using the Yale Office of Career Strategy's Action + Project + Result
 (APR) method. Action identifies your specific contribution, Project gives the
 meaningful work or problem context, and Result describes supported impact
@@ -120,18 +144,19 @@ showing an error. Refinement is unavailable in the browser preview.
 - Desktop resumes live in `workspace.json` within Tauri's app data directory for
   `app.hireloom.desktop`. On macOS this is typically
   `~/Library/Application Support/app.hireloom.desktop/`.
-- Resume files and JSON/PDF exports are **not encrypted**. Use device encryption,
-  protect backups, and avoid shared OS accounts.
+- Resume files and JSON/PDF/DOCX exports are **not encrypted**. Use device
+  encryption, protect backups, and avoid shared OS accounts.
 - Browser previews use the `hireloom.workspace.v1` localStorage key. Clearing
   browser data deletes that browser's workspace; export a backup first.
-- Whole-resume AI requests send the summary, work history, education, skills,
-  professional headline, and job description to GitHub Copilot. APR requests
+- Whole-resume AI requests send the summary, work history, projects (excluding
+  project URLs), education, certifications (excluding credential URLs), skills,
+  skill groups, professional headline, and job description to GitHub Copilot. APR requests
   send only the selected accomplishment and its role; an answer-guided
   refinement additionally sends only the nonblank displayed question/answer
-  pairs. Dedicated name, email, phone, personal location, website, GitHub, APR
-  diagnostics/initial rewrite, other resume fields, and local correlation IDs
-  are excluded. **Anything you type into free text can still contain
-  identifying information**; review and redact it yourself.
+  pairs. Dedicated name, email, phone, personal location, website, GitHub,
+  project/certification URLs, APR diagnostics/initial rewrite, other resume
+  fields, and local correlation IDs are excluded. **Anything you type into free
+  text can still contain identifying information**; review and redact it yourself.
 - Copilot authentication and session state use the app's `copilot` directory.
   The CLI may retain prompts and responses there, and GitHub processes the
   request according to your account's policies. Local-first does not mean
@@ -140,8 +165,10 @@ showing an error. Refinement is unavailable in the browser preview.
   versions block loading rather than being overwritten.
 
 Use **Document actions → Back up workspace** or **My resumes → Back up all**.
-Imports accept Hireloom version-1 JSON backups up to 2 MB and add new document
-copies rather than replacing existing work. Up to 50 resumes are supported.
+Imports accept Hireloom version-1 and version-2 JSON backups up to 2 MB (upgrading
+v1 backups automatically) and add new document copies rather than replacing
+existing work. PDF and DOCX resume imports accept files up to 5 MB and parse
+selectable text locally into a reviewable draft. Up to 50 resumes are supported.
 
 ## Development
 
@@ -149,6 +176,8 @@ Repository guides:
 
 - [`AGENTS.md`](AGENTS.md) defines repository-wide constraints, required checks,
   and the documentation maintenance contract.
+- [`PRODUCT.md`](PRODUCT.md) defines product vision, personas, positioning, core
+  journeys, shipped capabilities, and explicit non-goals.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) explains runtime boundaries, data flows,
   trust boundaries, and invariants.
 - [`CODE_MAP.md`](CODE_MAP.md) maps files and common changes to their owning
@@ -161,6 +190,7 @@ configurations for the matching checks below. The IDE must have Node.js support
 and Rust installed.
 
 ```sh
+npm run check:fast   # quick typecheck + quiet unit & Rust tests while iterating
 npm test
 npm run build
 npx playwright install chromium webkit
@@ -174,7 +204,8 @@ Set `PLAYWRIGHT_PORT` to run browser tests on another port when `1420` is
 already in use, for example `PLAYWRIGHT_PORT=1422 npm run test:e2e`.
 
 The browser suite covers real editing, persistence, corrupt storage, imports,
-document management, and exported PDF text in Chromium and WebKit. It also
+document management, exported PDF/DOCX content, and automated WCAG 2.2 AA
+accessibility checks (`@axe-core/playwright`) in Chromium and WebKit. It also
 checks ATS-relevant PDF compatibility: standard section headings, complete
 selectable text, and single-column extraction order. These checks do not claim
 compatibility with every ATS or provide a hiring score. Frontend unit tests cover schemas, keyword boundaries, save failures, and AI
@@ -198,28 +229,38 @@ chunk.
 
 Key code:
 
-| Location                 | Responsibility                                             |
-| ------------------------ | ---------------------------------------------------------- |
-| `src/model.ts`           | Validated document, import, and AI schemas; local feedback |
-| `src/useWorkspace.ts`    | Serialized autosaving and close protection                 |
-| `src/platform.ts`        | Desktop IPC and explicit browser-preview adapters          |
-| `src/components/`        | Editor, preview, Copilot review, and layout controls       |
-| `src/ResumeDocument.tsx` | Lazy-loaded, local PDF generation                          |
-| `src-tauri/src/`         | Native persistence, exports, and Copilot process boundary  |
+| Location                  | Responsibility                                                       |
+| ------------------------- | -------------------------------------------------------------------- |
+| `src/model/` (`model.ts`) | Validated Workspace v2, migration, Career Library, and AI contracts  |
+| `src/audit.ts`            | Deterministic local resume quality checks                            |
+| `src/keywords.ts`         | Dynamic job-description keyword extraction and phrase matching       |
+| `src/diff.ts`             | Word-level diffing for selective AI proposal review                  |
+| `src/resumeImport.ts`     | Lazy-loaded local PDF and DOCX resume text extraction and parsing    |
+| `src/docxExport.ts`       | Lazy-loaded local single-column OpenXML (`.docx`) generation         |
+| `src/useWorkspace.ts`     | Serialized autosaving and close protection                           |
+| `src/hooks/`              | Studio AI workflows and document import/export orchestration         |
+| `src/platform.ts`         | Desktop IPC and explicit browser-preview adapters                    |
+| `src/components/`         | Editor, Career Library, preview, AI review, studio shell, and layout |
+| `src/styles/` (`App.css`) | Studio layout, editor, preview, theme tokens, and accessibility CSS  |
+| `src/ResumeDocument.tsx`  | Lazy-loaded, local PDF generation                                    |
+| `src-tauri/src/`          | Modular native persistence, exports, and AI/Copilot boundaries       |
 
 Documentation is part of implementation. Code changes must update the README for
-affected setup or user behavior, the architecture guide for changed boundaries
-or flows, the code map for changed ownership or files, and `AGENTS.md` for
-changed contributor rules. The full decision table is in
+affected setup or user behavior, the product guide for changed capabilities,
+journeys, or non-goals, the architecture guide for changed boundaries or flows,
+the code map for changed ownership or files, and `AGENTS.md` for changed
+contributor rules. The full decision table is in
 [`AGENTS.md`](AGENTS.md#documentation-maintenance-contract).
 
-## Boundaries of this first version
+## Boundaries of this version
 
-This is a working MVP and is not affiliated with GitHub. There is no PDF/DOCX resume import, DOCX export, cover-letter
-generator, cloud sync, or application tracker yet. Keyword overlap is a small
-local vocabulary check, **not a proprietary ATS score or a hiring guarantee**.
-The on-screen preview is continuous; the exported PDF is the definitive
-paginated version.
+This is a local-first studio and is not affiliated with GitHub. There is no
+cover-letter generator, cloud sync, or application tracker yet. PDF and DOCX
+imports extract selectable text locally without OCR; scanned image PDFs and
+multi-column layouts may require manual cleanup after import. Keyword targeting
+and quality checks are transparent local rules, **not a proprietary ATS score or
+a hiring guarantee**. Dashed preview lines show estimated page breaks; the
+exported PDF is the definitive paginated version.
 
 Noto Sans and Noto Serif are bundled locally under the
 [SIL Open Font License](src/assets/fonts/OFL.txt), from

@@ -1,29 +1,33 @@
 # Hireloom
 
-Hireloom is a local-first Tauri 2 desktop resume studio, using React, TypeScript,
-Vite, and a Rust backend. The frontend also runs in an explicitly labeled browser
-preview with separate browser-local storage and no Copilot connection.
+Hireloom is a local-first Tauri 2 desktop resume studio (React, TypeScript, Vite,
+Rust) with an explicitly labeled browser preview using separate `localStorage`
+and no desktop AI connection.
 
-Read `AGENTS.md` before making changes. Use `CODE_MAP.md` to find ownership and
-`ARCHITECTURE.md` for boundaries and data flows.
+Follow [`AGENTS.md`](../AGENTS.md) for contributor workflow, context-efficiency
+rules, required checks, and documentation rules. Start with
+[`CODE_MAP.md`](../CODE_MAP.md) to locate the narrowest owning `<20 KB` module;
+consult [`ARCHITECTURE.md`](../ARCHITECTURE.md), [`PRODUCT.md`](../PRODUCT.md),
+and [`README.md`](../README.md) selectively when boundaries, product scope, or
+setup/privacy behavior are affected.
 
-- Keep resume data local. Never add analytics, remote fonts, or automatic AI calls.
-- AI requires explicit per-request consent. Exclude contact information from the
-  prompt, treat job descriptions as untrusted data, and review suggestions before
-  applying them. Never invent work history, qualifications, or metrics.
-- Do not broaden Tauri permissions or give the Copilot subprocess tools, shell
-  access, user project context, or ambient Copilot configuration.
-- Use the schemas in `src/model.ts` and matching Rust types as the persistence and
-  IPC contract. Validate imports and AI output; surface errors rather than
-  replacing corrupt files with an empty workspace.
-- Keep PDF output selectable text, locally generated, and single-column. Bundle
-  font assets and their licenses; do not use remote font URLs.
-- Preserve accessibility: labeled fields, keyboard navigation, visible focus,
-  reduced-motion support, and meaningful live status messages.
-- Run `npm test`, `npm run build`, and `cargo test --manifest-path
-src-tauri/Cargo.toml` for relevant changes. Browser flows use `npm run test:e2e`.
-- Do not commit resumes, exported documents, tokens, app data, or generated build
-  artifacts. Do not make live Copilot calls as part of automated tests.
-- Treat documentation as part of the change. Before finishing, update `README.md`,
-  `ARCHITECTURE.md`, `CODE_MAP.md`, and `AGENTS.md` wherever the code change
-  affects their setup, behavior, boundaries, file ownership, or workflow.
+- **Context efficiency:** Keep production `.ts`/`.tsx`/`.rs`/`.css` modules
+  `<20 KB` so single reads never truncate; scope `glob`/`grep` to `src/**`,
+  `src-tauri/src/**`, or `e2e/**`; use `view_range` on large test files; iterate
+  with targeted tests or `npm run check:fast` before full checks.
+- **Privacy & AI safety:** Keep resume data local (no analytics, remote fonts,
+  or automatic AI calls). Require explicit per-request consent, exclude contact
+  fields from prompts, treat user/job text as untrusted, never invent facts or
+  metrics, and keep the Copilot CLI subprocess isolated without tools, shell, or
+  project context.
+- **Contracts & storage:** Keep `src/model/` (`src/model.ts`) and
+  `src-tauri/src/{contract,validation}.rs` aligned. Reject malformed/corrupt
+  data visibly rather than replacing it with an empty workspace.
+- **Exports & UX:** Keep PDF/DOCX local, selectable, single-column text with
+  bundled fonts/licenses; preserve WCAG 2.2 AA labels, keyboard navigation,
+  focus, reduced motion, and live status messages.
+- **Verification & hygiene:** Run required checks from `AGENTS.md` (`npm test`,
+  `npm run build`, `cargo test --manifest-path src-tauri/Cargo.toml`, and
+  `npm run test:e2e` for browser/import/export flows) with no live AI calls,
+  never commit personal data or artifacts, and update affected docs before
+  finishing.

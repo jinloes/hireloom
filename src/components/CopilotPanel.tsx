@@ -1,34 +1,60 @@
+import { useRef, useState } from "react";
+import { LoaderCircle, ShieldCheck, Sparkles } from "lucide-react";
 import {
-  Check,
-  CheckCheck,
-  Github,
-  LoaderCircle,
-  ShieldCheck,
-  Sparkles,
-  X,
-} from "lucide-react";
-import {
+  defaultAiSettings,
   jobKeywords,
+  PROVIDER_LABELS,
   type AiProposal,
+  type AiSettings,
   type AprAnalysis,
   type AprRefinement,
   type AprTarget,
+  type ProposalSelection,
+  type ProviderKind,
   type Resume,
+  type RoleTailorProposal,
+  type SummaryOptionsProposal,
 } from "../model";
-import { desktop, type CopilotStatus } from "../platform";
+import type { CopilotStatus, ProviderCredentialStatus } from "../platform";
+import { AprCoachingSection } from "./copilot/AprCoachingSection";
+import { KeywordTriageCard } from "./copilot/KeywordTriageCard";
+import type { AiBusyKind } from "./copilot/ProposalPrimitives";
+import { ProviderConnectionCard } from "./copilot/ProviderConnectionCard";
+import { RewriteProposalsSection } from "./copilot/RewriteProposalsSection";
 import { Field } from "./Editor";
+
+export type { AiBusyKind };
 
 export function CopilotPanel({
   resume,
   onChange,
   status,
+  aiSettings = defaultAiSettings(),
+  providerStates = [],
+  onSaveAiSettings,
+  onSaveApiKey,
+  onClearApiKey,
   busy,
   consent,
   onConsent,
   onRefresh,
   onLogin,
   onGenerate,
+  onGenerateSummaryOptions,
+  summaryOptions,
+  summaryOptionsStale,
+  onApplySummaryOption,
+  onDiscardSummaryOptions,
+  onTailorRole,
+  roleProposal,
+  roleSelection,
+  onChangeRoleSelection,
+  roleStale,
+  onApplyRoleProposal,
+  onDiscardRoleProposal,
   proposal,
+  proposalSelection,
+  onChangeProposalSelection,
   stale,
   onApply,
   onDiscard,
@@ -53,13 +79,32 @@ export function CopilotPanel({
   resume: Resume;
   onChange: (resume: Resume) => void;
   status: CopilotStatus | null;
-  busy: "login" | "generate" | "analyze" | "refine" | "status" | null;
+  aiSettings?: AiSettings;
+  providerStates?: ProviderCredentialStatus[];
+  onSaveAiSettings?: (next: AiSettings) => void;
+  onSaveApiKey?: (provider: ProviderKind, apiKey: string) => void;
+  onClearApiKey?: (provider: ProviderKind) => void;
+  busy: AiBusyKind;
   consent: boolean;
   onConsent: (value: boolean) => void;
   onRefresh: () => void;
   onLogin: () => void;
   onGenerate: () => void;
+  onGenerateSummaryOptions?: () => void;
+  summaryOptions?: SummaryOptionsProposal | null;
+  summaryOptionsStale?: boolean;
+  onApplySummaryOption?: (summary: string) => void;
+  onDiscardSummaryOptions?: () => void;
+  onTailorRole?: (entryId: string) => void;
+  roleProposal?: RoleTailorProposal | null;
+  roleSelection?: boolean[] | null;
+  onChangeRoleSelection?: (next: boolean[]) => void;
+  roleStale?: boolean;
+  onApplyRoleProposal?: () => void;
+  onDiscardRoleProposal?: () => void;
   proposal: AiProposal | null;
+  proposalSelection: ProposalSelection | null;
+  onChangeProposalSelection: (next: ProposalSelection) => void;
   stale: boolean;
   onApply: () => void;
   onDiscard: () => void;
@@ -81,7 +126,57 @@ export function CopilotPanel({
   aprRefinementStale: boolean;
   onApplyAprRefinement: () => void;
 }) {
-  const keywords = jobKeywords(resume);
+  const [selectedRoleEntryId, setSelectedRoleEntryId] = useState<string>(
+    () => resume.experience[0]?.id ?? resume.projects[0]?.id ?? "",
+  );
+  const [aprFocusKeyword, setAprFocusKeyword] = useState<string>("");
+  const aprSectionRef = useRef<HTMLElement>(null);
+
+  const allKeywords = jobKeywords(resume);
+  const activeKeywords = allKeywords.filter((item) => !item.skipped);
+  const matchedKeywords = activeKeywords.filter((item) => item.matched);
+  const missingKeywords = activeKeywords.filter((item) => !item.matched);
+  const skippedKeywords = allKeywords.filter((item) => item.skipped);
+
+  const activeProvider = aiSettings.primaryProvider;
+  const activeProviderLabel = PROVIDER_LABELS[activeProvider];
+  const activeProviderInfo = providerStates.find(
+    (item) => item.provider === activeProvider,
+  );
+  const providerReady =
+    activeProvider === "copilot"
+      ? Boolean(status?.available)
+      : activeProviderInfo
+        ? activeProviderInfo.configured
+        : activeProvider === "ollama";
+
+  const roleEntries = [
+    ...resume.experience.map((e) => ({
+      id: e.id,
+      label: `${e.role || "Untitled role"}${e.company ? ` · ${e.company}` : ""}`,
+      bullets: e.bullets,
+    })),
+    ...resume.projects.map((p) => ({
+      id: p.id,
+      label: `Project: ${p.name || "Untitled project"}`,
+      bullets: p.bullets,
+    })),
+  ];
+  const effectiveRoleId = roleEntries.some((r) => r.id === selectedRoleEntryId)
+    ? selectedRoleEntryId
+    : (roleEntries[0]?.id ?? "");
+
+  const handleFocusKeywordInApr = (term: string) => {
+    setAprFocusKeyword(term);
+    if (aprTarget) {
+      onSelectApr({ ...aprTarget, focusKeyword: term });
+    }
+    aprSectionRef.current?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "start",
+    });
+  };
+
   return (
     <div className="assistant-content">
       <div className="assistant-intro">
@@ -93,48 +188,24 @@ export function CopilotPanel({
         </span>
         <h2>Find your best words.</h2>
         <p>
-          Turn your real experience into a focused story for the role you want.
-          Powered by GitHub Copilot.
+          Turn your real experience into a focused story using GitHub Copilot,
+          OpenAI, Anthropic, Gemini, or local Ollama.
         </p>
       </div>
-      <div className="connection-card">
-        <div className="connection-heading">
-          <Github size={20} />
-          <strong>GitHub Copilot</strong>
-          <span
-            className={`status-dot ${status?.available ? "available" : ""}`}
-          />
-        </div>
-        <p>{status?.detail ?? "Checking the local Copilot CLI…"}</p>
-        {status?.version && (
-          <code className="cli-version">{status.version}</code>
-        )}
-        <div className="button-row">
-          <button
-            className="button secondary small"
-            disabled={!desktop || !status?.available || Boolean(busy)}
-            onClick={onLogin}
-          >
-            {busy === "login" ? (
-              <LoaderCircle className="spin" size={14} />
-            ) : (
-              <Github size={14} />
-            )}
-            {busy === "login" ? "Waiting for sign-in…" : "Sign in with GitHub"}
-          </button>
-          <button
-            className="text-button"
-            disabled={Boolean(busy)}
-            onClick={onRefresh}
-          >
-            Refresh
-          </button>
-        </div>
-        <p className="fine-print">
-          CLI installed does not mean signed in. A Copilot-enabled account and
-          available usage are required.
-        </p>
-      </div>
+
+      <ProviderConnectionCard
+        status={status}
+        aiSettings={aiSettings}
+        providerStates={providerStates}
+        providerReady={providerReady}
+        busy={busy}
+        onRefresh={onRefresh}
+        onLogin={onLogin}
+        onSaveAiSettings={onSaveAiSettings}
+        onSaveApiKey={onSaveApiKey}
+        onClearApiKey={onClearApiKey}
+      />
+
       <Field
         label="Job description"
         value={resume.jobDescription}
@@ -146,41 +217,22 @@ export function CopilotPanel({
         hint="Optional. Leave this blank for a general resume polish."
       />
       {resume.jobDescription.trim() && (
-        <div className="keyword-card">
-          <div className="card-heading">
-            <strong>Keyword overlap</strong>
-            <span>
-              {keywords.filter((keyword) => keyword.matched).length} of{" "}
-              {keywords.length}
-            </span>
-          </div>
-          {keywords.length ? (
-            <div className="keyword-list">
-              {keywords.map(({ term, matched }) => (
-                <span
-                  key={term}
-                  className={matched ? "keyword matched" : "keyword"}
-                >
-                  {matched ? <Check size={11} /> : <PlusMark />}
-                  {term}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p>No terms from our small built-in keyword list were found.</p>
-          )}
-          <p className="fine-print">
-            A local keyword check, not an ATS score or hiring prediction. Only
-            add skills you actually have.
-          </p>
-        </div>
+        <KeywordTriageCard
+          resume={resume}
+          activeKeywords={activeKeywords}
+          matchedKeywords={matchedKeywords}
+          missingKeywords={missingKeywords}
+          skippedKeywords={skippedKeywords}
+          onChange={onChange}
+          onFocusKeywordInApr={handleFocusKeywordInApr}
+        />
       )}
       <div className="privacy-note">
         <ShieldCheck size={19} />
         <p>
-          Your contact fields stay out of the prompt. Summary, work history,
-          education, skills, headline, and job description are sent only when
-          you ask.
+          Your contact fields and personal URLs stay out of the prompt. Summary,
+          work history, projects, education, skills, headline, and job
+          description are sent to {activeProviderLabel} only when you ask.
         </p>
       </div>
       <label className="consent-check">
@@ -188,17 +240,22 @@ export function CopilotPanel({
           type="checkbox"
           checked={consent}
           onChange={(event) => onConsent(event.target.checked)}
-          disabled={busy === "generate"}
+          disabled={
+            busy === "generate" ||
+            busy === "summaryOptions" ||
+            busy === "tailorRole"
+          }
         />
         <span>
-          Send this content to GitHub Copilot for this request. I understand
-          this uses my Copilot allowance and may be retained under GitHub's
-          policies.
+          Send this content to {activeProviderLabel} for this request. I
+          understand this uses my configured provider account and is subject to
+          its data policies.
         </span>
       </label>
       <button
+        type="button"
         className="button primary generate-button"
-        disabled={!status?.available || !consent || Boolean(busy)}
+        disabled={!providerReady || !consent || Boolean(busy)}
         onClick={onGenerate}
       >
         {busy === "generate" ? (
@@ -212,337 +269,134 @@ export function CopilotPanel({
             ? "Tailor to this role"
             : "Polish my resume"}
       </button>
+
+      {(onGenerateSummaryOptions ||
+        (onTailorRole && roleEntries.length > 0)) && (
+        <div className="focused-ai-actions">
+          {onGenerateSummaryOptions && (
+            <button
+              type="button"
+              className="button secondary small"
+              disabled={!providerReady || !consent || Boolean(busy)}
+              onClick={onGenerateSummaryOptions}
+            >
+              {busy === "summaryOptions" ? (
+                <LoaderCircle className="spin" size={14} />
+              ) : (
+                <Sparkles size={14} />
+              )}
+              {busy === "summaryOptions"
+                ? "Drafting summaries…"
+                : "Suggest 3 summary angles"}
+            </button>
+          )}
+          {onTailorRole && roleEntries.length > 0 && (
+            <div className="role-tailor-bar">
+              <label className="visually-hidden" htmlFor="role-tailor-select">
+                Role or project to tailor
+              </label>
+              <select
+                id="role-tailor-select"
+                value={effectiveRoleId}
+                disabled={Boolean(busy)}
+                onChange={(e) => setSelectedRoleEntryId(e.target.value)}
+              >
+                {roleEntries.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="button secondary small"
+                disabled={
+                  !providerReady ||
+                  !consent ||
+                  !effectiveRoleId ||
+                  Boolean(busy)
+                }
+                onClick={() => onTailorRole(effectiveRoleId)}
+              >
+                {busy === "tailorRole" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                {busy === "tailorRole" ? "Tailoring role…" : "Tailor role"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <p className="fine-print center">
-        {busy === "generate"
+        {busy === "generate" ||
+        busy === "summaryOptions" ||
+        busy === "tailorRole"
           ? "This can take up to 3 minutes. No changes are applied automatically."
           : "No invented experience. No automatic edits. You're in control."}
       </p>
-      {proposal && (
-        <section className="proposal-card" aria-label="Copilot suggestions">
-          <div className="card-heading">
-            <strong>
-              <Sparkles size={16} /> Your suggested rewrite
-            </strong>
-            <button
-              className="icon-button"
-              aria-label="Discard suggestions"
-              onClick={onDiscard}
-            >
-              <X size={16} />
-            </button>
-          </div>
-          <p className="fine-print">
-            Check every claim before applying. AI can make mistakes, even when
-            instructed to use only your facts.
-          </p>
-          <h3>Summary</h3>
-          <p className="proposal-text">
-            {proposal.summary || "(No summary suggested)"}
-          </p>
-          {proposal.experience.map((entry) => (
-            <div key={entry.id}>
-              <h3>
-                {resume.experience.find((original) => original.id === entry.id)
-                  ?.role || "Experience"}
-              </h3>
-              <ul>
-                {entry.bullets.map((text, index) => (
-                  <li key={index}>{text}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          {proposal.notes.length > 0 && (
-            <div className="proposal-notes">
-              <h3>Things to consider</h3>
-              <ul>
-                {proposal.notes.map((note, index) => (
-                  <li key={index}>{note}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {stale && (
-            <p className="inline-error">
-              This resume changed after generation. Generate fresh suggestions
-              to avoid replacing newer work.
-            </p>
-          )}
-          <button
-            className="button primary"
-            disabled={stale || Boolean(busy)}
-            onClick={onApply}
-          >
-            <CheckCheck size={16} /> Apply reviewed suggestions
-          </button>
-        </section>
-      )}
-      <section className="apr-section" aria-labelledby="apr-heading">
-        <div className="card-heading">
-          <div>
-            <span className="eyebrow">ACTION · PROJECT · RESULT</span>
-            <h2 id="apr-heading">Analyze accomplishments</h2>
-          </div>
-        </div>
-        <p className="fine-print">
-          Review one accomplishment at a time for a specific action, meaningful
-          project, and supported result. Copilot may suggest improvements, but
-          you decide whether to apply them.
-        </p>
-        <div className="accomplishment-groups">
-          {resume.experience.map((experience) => {
-            const accomplishments = experience.bullets
-              .map((text, bulletIndex) => ({ text, bulletIndex }))
-              .filter(({ text }) => text.trim());
-            if (!accomplishments.length) return null;
-            return (
-              <div className="accomplishment-group" key={experience.id}>
-                <h3>{experience.role.trim() || "Untitled role"}</h3>
-                <ul>
-                  {accomplishments.map(({ text, bulletIndex }) => {
-                    const selected =
-                      aprTarget?.resumeId === resume.id &&
-                      aprTarget.experienceId === experience.id &&
-                      aprTarget.bulletIndex === bulletIndex;
-                    return (
-                      <li key={bulletIndex}>
-                        <p>{text}</p>
-                        <button
-                          className="button secondary small"
-                          aria-pressed={selected}
-                          onClick={() =>
-                            onSelectApr({
-                              resumeId: resume.id,
-                              experienceId: experience.id,
-                              bulletIndex,
-                              role: experience.role,
-                              bullet: text,
-                            })
-                          }
-                        >
-                          Analyze with APR
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            );
-          })}
-          {!resume.experience.some((experience) =>
-            experience.bullets.some((text) => text.trim()),
-          ) && (
-            <p className="fine-print">
-              Add a nonempty experience accomplishment to analyze it.
-            </p>
-          )}
-        </div>
-        {aprTarget && (
-          <div className="apr-request-card">
-            <h3>Selected accomplishment</h3>
-            <blockquote>{aprTarget.bullet}</blockquote>
-            <p className="privacy-note apr-disclosure">
-              <ShieldCheck size={18} />
-              <span>
-                Only this bullet and the role “
-                {aprTarget.role || "Untitled role"}” will be sent to GitHub
-                Copilot. Resume IDs and the bullet position stay local.
-              </span>
-            </p>
-            <label className="consent-check">
-              <input
-                type="checkbox"
-                checked={aprConsent}
-                onChange={(event) => onAprConsent(event.target.checked)}
-                disabled={busy === "analyze" || !desktop}
-              />
-              <span>
-                Send this selected bullet and role to GitHub Copilot for this
-                APR request.
-              </span>
-            </label>
-            <button
-              className="button primary generate-button"
-              disabled={
-                !desktop || !status?.available || !aprConsent || Boolean(busy)
-              }
-              onClick={onAnalyzeApr}
-            >
-              {busy === "analyze" ? (
-                <LoaderCircle className="spin" size={17} />
-              ) : (
-                <Sparkles size={17} />
-              )}
-              {busy === "analyze"
-                ? "Analyzing accomplishment…"
-                : "Confirm APR analysis"}
-            </button>
-            {!desktop && (
-              <p className="fine-print" role="status">
-                APR analysis is available only in the desktop app.
-              </p>
-            )}
-          </div>
-        )}
-        {aprAnalysis && (
-          <section className="apr-analysis" aria-label="APR analysis">
-            <div className="card-heading">
-              <strong>
-                <Sparkles size={16} /> APR review
-              </strong>
-              <button
-                className="icon-button"
-                aria-label="Discard APR analysis"
-                onClick={onDiscardApr}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            <p className="fine-print">
-              Review every claim. Ask yourself the follow-up questions before
-              adding facts or metrics.
-            </p>
-            {(["action", "project", "result"] as const).map((dimension) => (
-              <div className="apr-dimension" key={dimension}>
-                <h3>{dimension}</h3>
-                <span className={`apr-status ${aprAnalysis[dimension].status}`}>
-                  {aprAnalysis[dimension].status}
-                </span>
-                <p>{aprAnalysis[dimension].feedback}</p>
-              </div>
-            ))}
-            {aprAnalysis.rewrite !== undefined && (
-              <div className="apr-rewrite">
-                <h3>Suggested rewrite</h3>
-                <p>{aprAnalysis.rewrite || "(No rewrite suggested)"}</p>
-              </div>
-            )}
-            {aprAnalysis.questions.length > 0 && (
-              <div className="proposal-notes apr-questions">
-                <h3>Questions to strengthen the result</h3>
-                {aprAnalysis.questions.map((question, index) => (
-                  <div className="apr-answer" key={question}>
-                    <p>{question}</p>
-                    <Field
-                      label={`Answer ${index + 1}`}
-                      value={aprAnswers[index] ?? ""}
-                      onChange={(value) => onAprAnswer(index, value)}
-                      multiline
-                      rows={3}
-                      maxLength={2_000}
-                      hint="Optional. Only nonblank answers are sent."
-                    />
-                  </div>
-                ))}
-                <div className="apr-refinement-request">
-                  <p className="privacy-note apr-disclosure">
-                    <ShieldCheck size={18} />
-                    <span>
-                      A refinement sends only the role, original bullet, and
-                      your nonblank question-and-answer pairs. Unanswered
-                      questions, resume IDs, APR feedback, the initial rewrite,
-                      contact details, and all other resume data stay local.
-                    </span>
-                  </p>
-                  <label className="consent-check">
-                    <input
-                      type="checkbox"
-                      checked={aprRefinementConsent}
-                      onChange={(event) =>
-                        onAprRefinementConsent(event.target.checked)
-                      }
-                      disabled={busy === "refine" || !desktop || aprStale}
-                    />
-                    <span>
-                      Send these nonblank answers with the selected role and
-                      bullet to GitHub Copilot for this refinement request.
-                    </span>
-                  </label>
-                  <button
-                    className="button primary generate-button"
-                    disabled={
-                      !desktop ||
-                      !status?.available ||
-                      aprStale ||
-                      !aprAnswers.some((answer) => answer.trim()) ||
-                      !aprRefinementConsent ||
-                      Boolean(busy)
-                    }
-                    onClick={onRefineApr}
-                  >
-                    {busy === "refine" ? (
-                      <LoaderCircle className="spin" size={17} />
-                    ) : (
-                      <Sparkles size={17} />
-                    )}
-                    {busy === "refine"
-                      ? "Refining rewrite…"
-                      : "Refine rewrite with answers"}
-                  </button>
-                  {!desktop && (
-                    <p className="fine-print" role="status">
-                      APR refinement is available only in the desktop app.
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            {aprRefinement && (
-              <section
-                className="apr-refinement"
-                aria-label="Latest refined rewrite"
-              >
-                <h3>Latest refined rewrite</h3>
-                <p>{aprRefinement.rewrite}</p>
-                {aprRefinementStale && (
-                  <p className="inline-error">
-                    This accomplishment or its answers changed after refinement.
-                    Restore the submitted answers or refine again before
-                    applying.
-                  </p>
-                )}
-                <button
-                  className="button primary"
-                  disabled={aprRefinementStale || Boolean(busy)}
-                  onClick={onApplyAprRefinement}
-                >
-                  <CheckCheck size={16} /> Apply refined rewrite
-                </button>
-              </section>
-            )}
-            {aprStale && (
-              <p className="inline-error">
-                This accomplishment or its role changed after analysis. Analyze
-                it again before applying.
-              </p>
-            )}
-            <button
-              className="button primary"
-              disabled={
-                aprStale ||
-                Boolean(busy) ||
-                !aprAnalysis.rewrite?.trim() ||
-                aprAnalysis.rewrite === aprAnalysis.target.bullet
-              }
-              onClick={onApplyApr}
-            >
-              <CheckCheck size={16} /> Apply initial rewrite
-            </button>
-          </section>
-        )}
-      </section>
+
+      <RewriteProposalsSection
+        resume={resume}
+        busy={busy}
+        roleEntries={roleEntries}
+        summaryOptions={summaryOptions}
+        summaryOptionsStale={summaryOptionsStale}
+        onApplySummaryOption={onApplySummaryOption}
+        onDiscardSummaryOptions={onDiscardSummaryOptions}
+        roleProposal={roleProposal}
+        roleSelection={roleSelection}
+        onChangeRoleSelection={onChangeRoleSelection}
+        roleStale={roleStale}
+        onApplyRoleProposal={onApplyRoleProposal}
+        onDiscardRoleProposal={onDiscardRoleProposal}
+        proposal={proposal}
+        proposalSelection={proposalSelection}
+        onChangeProposalSelection={onChangeProposalSelection}
+        stale={stale}
+        onApply={onApply}
+        onDiscard={onDiscard}
+      />
+
+      <AprCoachingSection
+        sectionRef={aprSectionRef}
+        resume={resume}
+        activeProviderLabel={activeProviderLabel}
+        providerReady={providerReady}
+        busy={busy}
+        missingKeywords={missingKeywords}
+        aprFocusKeyword={aprFocusKeyword}
+        onSetAprFocusKeyword={setAprFocusKeyword}
+        aprTarget={aprTarget}
+        onSelectApr={onSelectApr}
+        aprConsent={aprConsent}
+        onAprConsent={onAprConsent}
+        onAnalyzeApr={onAnalyzeApr}
+        aprAnalysis={aprAnalysis}
+        aprStale={aprStale}
+        onApplyApr={onApplyApr}
+        onDiscardApr={onDiscardApr}
+        aprAnswers={aprAnswers}
+        onAprAnswer={onAprAnswer}
+        aprRefinementConsent={aprRefinementConsent}
+        onAprRefinementConsent={onAprRefinementConsent}
+        onRefineApr={onRefineApr}
+        aprRefinement={aprRefinement}
+        aprRefinementStale={aprRefinementStale}
+        onApplyAprRefinement={onApplyAprRefinement}
+      />
+
       <div className="setup-note">
-        <strong>First-time setup</strong>
+        <strong>Provider options</strong>
         <p>
-          Install GitHub Copilot CLI, then sign in above. Hireloom keeps a
-          separate Copilot profile from your coding sessions.
+          Use GitHub Copilot CLI (<code>npm install -g @github/copilot</code>),
+          save an OpenAI, Anthropic, or Gemini API key in your OS credential
+          store, or run local models offline via Ollama at{" "}
+          <code>127.0.0.1:11434</code>.
         </p>
-        <code>npm install -g @github/copilot</code>
       </div>
     </div>
   );
-}
-
-function PlusMark() {
-  return <span aria-hidden="true">+</span>;
 }

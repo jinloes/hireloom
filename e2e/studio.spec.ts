@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -156,7 +157,7 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
     version: number;
     resumes: unknown[];
   };
-  expect(parsed.version).toBe(1);
+  expect(parsed.version).toBe(2);
   expect(parsed.resumes).toHaveLength(2);
   await page.getByLabel("Import Hireloom backup").setInputFiles(path);
   await expect(page.getByRole("status")).toContainText("Imported 2 resumes");
@@ -380,4 +381,169 @@ test("long resumes paginate without losing text or accented names", async ({
   expect(text).toContain("Zoë Núñez");
   expect(text).toContain("Highlight 8.5:");
   expect(text).toContain("Final content marker");
+});
+
+test("supports projects, categorized skills, US Letter, DOCX export, and local PDF/DOCX resume import", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "try a fictional example" }).click();
+  await expect(page.getByTestId("resume-preview")).toContainText("Alex Morgan");
+
+  // Add a Project and a Categorized Skill Group
+  const projectsSummary = page
+    .locator("summary > span", { hasText: "Projects" })
+    .first();
+  await projectsSummary.scrollIntoViewIfNeeded();
+  await projectsSummary.click();
+  await page.getByRole("button", { name: "Add project" }).click();
+  await page.getByLabel("Project name 1").fill("Hireloom Studio");
+  await page
+    .getByLabel("Project role or stack 1")
+    .fill("Creator · TypeScript, Rust");
+  await page
+    .getByLabel("Project highlight 1.1", { exact: true })
+    .fill("Built local single-column PDF and DOCX resume generation.");
+
+  await page.getByRole("button", { name: "Add skill category" }).click();
+  await page.getByLabel("Category heading 1").fill("Systems");
+  await page.getByLabel("Category 1 skills").fill("Rust, Tauri, TypeScript");
+
+  // Configure US Letter + Compact density in Design
+  await page.getByRole("tab", { name: "Design", exact: true }).click();
+  await page.getByRole("button", { name: /US Letter/ }).click();
+  await page.getByRole("button", { name: /Compact/ }).click();
+  await expect(page.locator(".preview-toolbar")).toContainText("US Letter");
+  await expect(page.getByTestId("resume-preview")).toHaveClass(
+    /density-compact/,
+  );
+  await expect(page.getByTestId("resume-preview")).toHaveClass(/page-letter/);
+
+  // Export DOCX and PDF, then re-import both locally via Import PDF or DOCX resume
+  const docxDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export DOCX", exact: true }).click();
+  const docxPath = await (await docxDownload).path();
+  if (!docxPath) throw new Error("Missing DOCX download.");
+
+  const pdfDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export PDF", exact: true }).click();
+  const pdfPath = await (await pdfDownload).path();
+  if (!pdfPath) throw new Error("Missing PDF download.");
+
+  const { text: pdfText } = await extractPdfText(pdfPath);
+  expect(pdfText).toContain("Projects");
+  expect(pdfText).toContain("Hireloom Studio");
+  expect(pdfText).toContain("Systems:");
+
+  // Re-import the DOCX resume locally
+  await page.getByLabel("Import PDF or DOCX resume").setInputFiles(docxPath);
+  const reviewDialog = page.getByRole("dialog", {
+    name: "Review imported resume",
+  });
+  await expect(reviewDialog).toBeVisible();
+  await expect(reviewDialog).toContainText("Alex Morgan");
+  await reviewDialog
+    .getByRole("button", { name: "Add imported resume" })
+    .click();
+  await expect(page.getByRole("status")).toContainText("from DOCX");
+
+  // Re-import the PDF resume locally
+  await page.getByLabel("Import PDF or DOCX resume").setInputFiles(pdfPath);
+  await expect(reviewDialog).toBeVisible();
+  await expect(reviewDialog).toContainText("Alex Morgan");
+  await reviewDialog
+    .getByRole("button", { name: "Add imported resume" })
+    .click();
+  await expect(page.getByRole("status")).toContainText("from PDF");
+});
+
+test("meets WCAG 2.2 AA contrast and ARIA rules across light, dark, menus, and preview-to-editor jump", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "try a fictional example" }).click();
+  await expect(page.getByTestId("resume-preview")).toContainText("Alex Morgan");
+
+  // Open Quality checks drawer and verify WCAG 2.2 AA in Light mode
+  await page.getByRole("button", { name: /Quality checks/ }).click();
+  await expect(
+    page.getByRole("region", { name: "Resume quality checks" }),
+  ).toBeVisible();
+
+  const formatViolations = (
+    violations: Awaited<ReturnType<AxeBuilder["analyze"]>>["violations"],
+  ) =>
+    violations.map(
+      (v) =>
+        `${v.id}: ${v.nodes.map((n) => `${n.target.join(" ")} (${n.failureSummary ?? ""})`).join("; ")}`,
+    );
+
+  const lightScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+  expect(formatViolations(lightScan.violations)).toEqual([]);
+
+  // Check Copilot tab with provider settings, keyword triage, skipped keywords, and Coach APR banner
+  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
+  await page.getByText("Provider, model & 2-model verification").click();
+  await expect(page.getByLabel("Primary AI provider")).toBeVisible();
+  await page
+    .getByLabel("Job description")
+    .fill("Senior Designer with Figma, FastAPI, and Kubernetes.");
+  await page.getByLabel("Skip kubernetes").click();
+  await page.getByLabel("Coach accomplishment for fastapi").click();
+  await expect(page.getByText("Target skill focus:")).toBeVisible();
+
+  const copilotScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+  expect(formatViolations(copilotScan.violations)).toEqual([]);
+
+  // Click section on live preview to jump back to Content tab and open Education
+  await page
+    .getByTestId("resume-preview")
+    .getByRole("heading", { name: "Education" })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Content", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("School 1", { exact: true })).toBeVisible();
+
+  // Switch to Dark studio theme + open Document actions menu and verify WCAG 2.2 AA
+  await page.getByLabel("Switch to dark studio theme").click();
+  await page.getByLabel("Document actions").click();
+  await expect(
+    page.getByRole("group", { name: "Document actions" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("hireloom-studio-dark.png"),
+  });
+
+  const darkScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+  expect(formatViolations(darkScan.violations)).toEqual([]);
+
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("group", { name: "Document actions" }),
+  ).toHaveCount(0);
+
+  // Verify Career Library per-bullet selection & JD match badges in Dark theme
+  await page.getByRole("button", { name: /Career library/ }).click();
+  await page
+    .getByRole("button", { name: /Import from current resume/ })
+    .click();
+  await page
+    .getByLabel("Target job description (optional)")
+    .fill("Seeking a Product Designer skilled in Figma and design systems.");
+  await page
+    .getByRole("button", { name: /Auto-pick JD-matching bullets/ })
+    .click();
+  await expect(page.getByText(/Matches \d+ JD/).first()).toBeVisible();
+
+  const darkLibraryScan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+  expect(formatViolations(darkLibraryScan.violations)).toEqual([]);
 });

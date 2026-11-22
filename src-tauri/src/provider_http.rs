@@ -1,0 +1,247 @@
+use crate::providers::{validate_compatible_base_url, validate_model_id, ProviderKind};
+use reqwest::{blocking::Client, redirect::Policy};
+use serde_json::json;
+use std::{io::Read, time::Duration};
+
+#[derive(Debug, Clone)]
+pub struct HttpEndpoints {
+    pub openai_base: String,
+    pub anthropic_base: String,
+    pub gemini_base: String,
+}
+
+impl Default for HttpEndpoints {
+    fn default() -> Self {
+        Self {
+            openai_base: "https://api.openai.com/v1".to_string(),
+            anthropic_base: "https://api.anthropic.com/v1".to_string(),
+            gemini_base: "https://generativelanguage.googleapis.com/v1beta".to_string(),
+        }
+    }
+}
+
+fn read_response_capped(
+    mut response: reqwest::blocking::Response,
+    max_bytes: usize,
+) -> Result<(reqwest::StatusCode, Vec<u8>), String> {
+    let status = response.status();
+    let mut buffer = Vec::with_capacity(8 * 1024);
+    let mut chunk = [0_u8; 8 * 1024];
+    loop {
+        let count = response
+            .read(&mut chunk)
+            .map_err(|error| format!("Failed while reading provider response: {error}"))?;
+        if count == 0 {
+            break;
+        }
+        if buffer.len() + count > max_bytes {
+            return Err("AI provider response exceeds the 128 KB limit".to_string());
+        }
+        buffer.extend_from_slice(&chunk[..count]);
+    }
+    Ok((status, buffer))
+}
+
+fn summarize_http_error(
+    provider: ProviderKind,
+    status: reqwest::StatusCode,
+    body: &[u8],
+) -> String {
+    let preview: String = String::from_utf8_lossy(body)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(240)
+        .collect();
+    if preview.is_empty() {
+        format!(
+            "{} request failed with HTTP {}",
+            provider.as_id(),
+            status.as_u16()
+        )
+    } else {
+        format!(
+            "{} request failed (HTTP {}): {}",
+            provider.as_id(),
+            status.as_u16(),
+            preview
+        )
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_http_provider_prompt(
+    provider: ProviderKind,
+    model: &str,
+    prompt: &str,
+    api_key: Option<&str>,
+    ollama_base_url: &str,
+    endpoints: &HttpEndpoints,
+    timeout: Duration,
+    max_output_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    validate_model_id(provider, model)?;
+    let client = Client::builder()
+        .timeout(timeout)
+        .redirect(Policy::none())
+        .user_agent("Hireloom/0.2")
+        .build()
+        .map_err(|error| format!("Unable to initialize HTTP client: {error}"))?;
+
+    let system_msg = "Return valid JSON only matching the requested schema, with no extra keys or surrounding prose.";
+
+    match provider {
+        ProviderKind::Copilot => {
+            Err("Copilot requests must use the isolated CLI runner".to_string())
+        }
+        ProviderKind::Openai | ProviderKind::Ollama => {
+            let base = if provider == ProviderKind::Openai {
+                endpoints.openai_base.trim_end_matches('/').to_string()
+            } else {
+                validate_compatible_base_url(ollama_base_url)?;
+                ollama_base_url.trim_end_matches('/').to_string()
+            };
+            let url = format!("{base}/chat/completions");
+            let mut request = client.post(&url).json(&json!({
+                "model": model,
+                "temperature": 0.2,
+                "messages": [
+                    { "role": "system", "content": system_msg },
+                    { "role": "user", "content": prompt }
+                ]
+            }));
+            if provider == ProviderKind::Openai {
+                let key = api_key.ok_or_else(|| {
+                    "Configure your OpenAI API key in AI settings or set OPENAI_API_KEY."
+                        .to_string()
+                })?;
+                request = request.bearer_auth(key);
+            } else if let Some(key) = api_key {
+                if !key.trim().is_empty() {
+                    request = request.bearer_auth(key);
+                }
+            }
+
+            let response = request.send().map_err(|error| {
+                format!(
+                    "Unable to reach {} endpoint: {}",
+                    provider.as_id(),
+                    error.without_url()
+                )
+            })?;
+            let (status, body) = read_response_capped(response, max_output_bytes)?;
+            if !status.is_success() {
+                return Err(summarize_http_error(provider, status, &body));
+            }
+            let parsed: serde_json::Value = serde_json::from_slice(&body).map_err(|error| {
+                format!("Invalid JSON envelope from {}: {error}", provider.as_id())
+            })?;
+            let text = parsed
+                .pointer("/choices/0/message/content")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| {
+                    format!("{} response did not contain message text", provider.as_id())
+                })?;
+            Ok(text.as_bytes().to_vec())
+        }
+        ProviderKind::Anthropic => {
+            let key = api_key.ok_or_else(|| {
+                "Configure your Anthropic API key in AI settings or set ANTHROPIC_API_KEY."
+                    .to_string()
+            })?;
+            let url = format!(
+                "{}/messages",
+                endpoints.anthropic_base.trim_end_matches('/')
+            );
+            let response = client
+                .post(&url)
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01")
+                .json(&json!({
+                    "model": model,
+                    "max_tokens": 4096,
+                    "temperature": 0.2,
+                    "system": system_msg,
+                    "messages": [
+                        { "role": "user", "content": prompt }
+                    ]
+                }))
+                .send()
+                .map_err(|error| {
+                    format!(
+                        "Unable to reach Anthropic endpoint: {}",
+                        error.without_url()
+                    )
+                })?;
+            let (status, body) = read_response_capped(response, max_output_bytes)?;
+            if !status.is_success() {
+                return Err(summarize_http_error(provider, status, &body));
+            }
+            let parsed: serde_json::Value = serde_json::from_slice(&body)
+                .map_err(|error| format!("Invalid JSON envelope from Anthropic: {error}"))?;
+            let blocks = parsed
+                .get("content")
+                .and_then(serde_json::Value::as_array)
+                .ok_or_else(|| "Anthropic response did not contain content blocks".to_string())?;
+            let mut combined = String::new();
+            for block in blocks {
+                if block.get("type").and_then(serde_json::Value::as_str) == Some("text") {
+                    if let Some(piece) = block.get("text").and_then(serde_json::Value::as_str) {
+                        combined.push_str(piece);
+                    }
+                }
+            }
+            if combined.trim().is_empty() {
+                return Err("Anthropic response did not contain text output".to_string());
+            }
+            Ok(combined.into_bytes())
+        }
+        ProviderKind::Gemini => {
+            let key = api_key.ok_or_else(|| {
+                "Configure your Google Gemini API key in AI settings or set GEMINI_API_KEY."
+                    .to_string()
+            })?;
+            let url = format!(
+                "{}/models/{}:generateContent",
+                endpoints.gemini_base.trim_end_matches('/'),
+                model
+            );
+            let response = client
+                .post(&url)
+                .header("x-goog-api-key", key)
+                .json(&json!({
+                    "systemInstruction": {
+                        "parts": [{ "text": system_msg }]
+                    },
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [{ "text": prompt }]
+                        }
+                    ],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "responseMimeType": "application/json"
+                    }
+                }))
+                .send()
+                .map_err(|error| {
+                    format!("Unable to reach Gemini endpoint: {}", error.without_url())
+                })?;
+            let (status, body) = read_response_capped(response, max_output_bytes)?;
+            if !status.is_success() {
+                return Err(summarize_http_error(provider, status, &body));
+            }
+            let parsed: serde_json::Value = serde_json::from_slice(&body)
+                .map_err(|error| format!("Invalid JSON envelope from Gemini: {error}"))?;
+            let text = parsed
+                .pointer("/candidates/0/content/parts/0/text")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "Gemini response did not contain candidate text".to_string())?;
+            Ok(text.as_bytes().to_vec())
+        }
+    }
+}

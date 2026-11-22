@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { exampleResume, type Workspace } from "./model";
+import {
+  defaultAiSettings,
+  emptyCareerLibrary,
+  exampleResume,
+  WORKSPACE_VERSION,
+  type Workspace,
+} from "./model";
 import * as platform from "./platform";
 import App from "./App";
 
@@ -18,6 +24,10 @@ vi.mock("./platform", async (importOriginal) => {
     desktop: true,
     loadWorkspace: vi.fn(),
     saveWorkspace: vi.fn().mockResolvedValue(undefined),
+    aiProviderStatus: vi.fn(),
+    saveAiSettings: vi.fn(),
+    setProviderApiKey: vi.fn(),
+    clearProviderApiKey: vi.fn(),
     copilotStatus: vi.fn().mockResolvedValue({
       available: true,
       version: "test-cli",
@@ -26,6 +36,9 @@ vi.mock("./platform", async (importOriginal) => {
     analyzeAccomplishment: vi.fn(),
     refineAccomplishment: vi.fn(),
     generateResume: vi.fn(),
+    generateSummaryOptions: vi.fn(),
+    tailorExperienceRole: vi.fn(),
+    structureImportedResume: vi.fn(),
     loginToCopilot: vi.fn(),
   };
 });
@@ -35,14 +48,59 @@ let workspace: Workspace;
 beforeEach(() => {
   vi.clearAllMocks();
   const resume = exampleResume();
-  workspace = { version: 1, activeResumeId: resume.id, resumes: [resume] };
+  workspace = {
+    version: WORKSPACE_VERSION,
+    activeResumeId: resume.id,
+    resumes: [resume],
+    careerLibrary: emptyCareerLibrary(),
+  };
   vi.mocked(platform.loadWorkspace).mockResolvedValue(workspace);
   vi.mocked(platform.saveWorkspace).mockResolvedValue(undefined);
-  vi.mocked(platform.copilotStatus).mockResolvedValue({
+  const copilot = {
     available: true,
     version: "test-cli",
     detail: "CLI installed; sign-in not verified.",
+  };
+  vi.mocked(platform.copilotStatus).mockResolvedValue(copilot);
+  vi.mocked(platform.aiProviderStatus).mockResolvedValue({
+    settings: defaultAiSettings(),
+    copilot,
+    providers: [
+      {
+        provider: "copilot",
+        configured: true,
+        hasStoredKey: false,
+        hasEnvKey: false,
+      },
+      {
+        provider: "openai",
+        configured: false,
+        hasStoredKey: false,
+        hasEnvKey: false,
+      },
+      {
+        provider: "anthropic",
+        configured: false,
+        hasStoredKey: false,
+        hasEnvKey: false,
+      },
+      {
+        provider: "gemini",
+        configured: false,
+        hasStoredKey: false,
+        hasEnvKey: false,
+      },
+      {
+        provider: "ollama",
+        configured: true,
+        hasStoredKey: false,
+        hasEnvKey: false,
+      },
+    ],
   });
+  vi.mocked(platform.saveAiSettings).mockImplementation(async (next) => next);
+  vi.mocked(platform.setProviderApiKey).mockResolvedValue(undefined);
+  vi.mocked(platform.clearProviderApiKey).mockResolvedValue(undefined);
 });
 
 describe("resume studio", () => {
@@ -593,5 +651,329 @@ describe("resume studio", () => {
       vi.mocked(platform.saveWorkspace).mock.calls[1][0].resumes[0].basics.name,
     ).toBe("Latest revision");
     expect(await screen.findByText("Autosaved on this device")).toBeVisible();
+  });
+
+  it("supports inline APR launch, selective proposal items, keyword triage, quality checks, and career library", async () => {
+    const original = workspace.resumes[0];
+    const proposal = {
+      summary: "Selective summary rewrite.",
+      experience: original.experience.map((entry, idx) => ({
+        id: entry.id,
+        bullets: entry.bullets.map((_, bIdx) => `Proposed ${idx}.${bIdx}`),
+      })),
+      notes: [],
+    };
+    vi.mocked(platform.generateResume).mockResolvedValue(proposal);
+
+    render(<App />);
+    // Launch APR directly from Editor bullet
+    const inlineApr = (
+      await screen.findAllByRole("button", {
+        name: /Coach highlight 1\.1 with APR/,
+      })
+    )[0];
+    fireEvent.click(inlineApr);
+    expect(screen.getByText("Selected accomplishment")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    // Interactive JD keyword triage
+    fireEvent.change(screen.getByLabelText("Job description"), {
+      target: { value: "Experience with FastAPI, Kubernetes, and Figma." },
+    });
+    fireEvent.click(screen.getByLabelText("Skip kubernetes"));
+    expect(screen.getByLabelText("Restore kubernetes")).toBeVisible();
+    fireEvent.click(screen.getByLabelText("Add fastapi to skills"));
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent("fastapi");
+
+    // Reset APR selection so only main consent checkbox is checked, then test selective proposal apply
+    fireEvent.click(screen.getByRole("tab", { name: "Content" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Copilot" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Send this content to GitHub Copilot/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Tailor to this role" }),
+    );
+    await screen.findByRole("region", { name: "Copilot suggestions" });
+
+    // Exclude summary rewrite, keep bullet rewrites
+    fireEvent.click(screen.getByLabelText("Include summary suggestion"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply reviewed suggestions" }),
+    );
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      original.summary,
+    );
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      "Proposed 0.0",
+    );
+
+    // Quality checks drawer
+    fireEvent.click(screen.getByRole("button", { name: /Quality checks/ }));
+    expect(
+      screen.getByRole("region", { name: "Resume quality checks" }),
+    ).toBeVisible();
+
+    // Career library sync & variant creation
+    fireEvent.click(screen.getByRole("button", { name: /Career library/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Import from current resume/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Select all/ }));
+    fireEvent.change(screen.getByLabelText("Variant resume title"), {
+      target: { value: "Staff Design Variant" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create tailored resume" }),
+    );
+    expect(screen.getByLabelText("Resume title")).toHaveValue(
+      "Staff Design Variant",
+    );
+  });
+
+  it("supports undo/redo for destructive entry deletion, collapsible cards, skill chips, zoom, dark theme, and Escape menu dismissal", async () => {
+    render(<App />);
+    const roleTitle = workspace.resumes[0].experience[0].role;
+    expect(await screen.findByTestId("resume-preview")).toHaveTextContent(
+      roleTitle,
+    );
+
+    // Collapsible experience card
+    fireEvent.click(screen.getByLabelText("Collapse position 1"));
+    expect(screen.queryByLabelText("Job title 1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Expand position 1"));
+    expect(screen.getByLabelText("Job title 1")).toBeVisible();
+
+    // Destructive entry deletion + Undo + Redo
+    fireEvent.click(screen.getByLabelText("Remove position 1"));
+    expect(screen.getByRole("status")).toHaveTextContent(/Removed/);
+    expect(screen.getByTestId("resume-preview")).not.toHaveTextContent(
+      roleTitle,
+    );
+    fireEvent.click(screen.getByLabelText("Undo last change"));
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(roleTitle);
+    fireEvent.click(screen.getByLabelText("Redo change"));
+    expect(screen.getByTestId("resume-preview")).not.toHaveTextContent(
+      roleTitle,
+    );
+    fireEvent.click(screen.getByLabelText("Undo last change"));
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(roleTitle);
+
+    // Interactive skill chips
+    const chipInput = screen.getByLabelText("Add skill tag");
+    fireEvent.change(chipInput, { target: { value: "Design Tokens" } });
+    fireEvent.keyDown(chipInput, { key: "Enter" });
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      "Design Tokens",
+    );
+    fireEvent.click(screen.getByLabelText("Remove skill Design Tokens"));
+    expect(screen.getByTestId("resume-preview")).not.toHaveTextContent(
+      "Design Tokens",
+    );
+
+    // Document actions Escape dismissal
+    const menuTrigger = screen.getByLabelText("Document actions");
+    fireEvent.click(menuTrigger);
+    expect(
+      screen.getByRole("group", { name: "Document actions" }),
+    ).toBeVisible();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(
+      screen.queryByRole("group", { name: "Document actions" }),
+    ).not.toBeInTheDocument();
+
+    // Preview zoom & Dark theme toggle
+    fireEvent.click(screen.getByLabelText("Zoom in preview"));
+    expect(screen.getByText("125%")).toBeVisible();
+    fireEvent.click(screen.getByLabelText("Switch to dark studio theme"));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("supports multi-provider switching, OS keychain keys, 2-model grounding badges, summary options, role tailoring, and keyword-aware APR", async () => {
+    const original = workspace.resumes[0];
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Checking the local Copilot CLI…"),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Switch primary provider to OpenAI API and save an API key to OS credential store
+    vi.mocked(platform.aiProviderStatus).mockResolvedValue({
+      settings: {
+        ...defaultAiSettings(),
+        primaryProvider: "openai",
+        primaryModel: "gpt-4.1",
+        verifierEnabled: true,
+        verifierProvider: "anthropic",
+        verifierModel: "claude-sonnet-4-5",
+      },
+      copilot: {
+        available: true,
+        version: "test-cli",
+        detail: "CLI installed; sign-in not verified.",
+      },
+      providers: [
+        {
+          provider: "copilot",
+          configured: true,
+          hasStoredKey: false,
+          hasEnvKey: false,
+        },
+        {
+          provider: "openai",
+          configured: true,
+          hasStoredKey: true,
+          hasEnvKey: false,
+        },
+        {
+          provider: "anthropic",
+          configured: true,
+          hasStoredKey: true,
+          hasEnvKey: false,
+        },
+        {
+          provider: "gemini",
+          configured: false,
+          hasStoredKey: false,
+          hasEnvKey: false,
+        },
+        {
+          provider: "ollama",
+          configured: true,
+          hasStoredKey: false,
+          hasEnvKey: false,
+        },
+      ],
+    });
+
+    fireEvent.change(screen.getByLabelText("Primary AI provider"), {
+      target: { value: "openai" },
+    });
+    await waitFor(() =>
+      expect(platform.saveAiSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          primaryProvider: "openai",
+          primaryModel: "gpt-4.1",
+        }),
+      ),
+    );
+
+    fireEvent.change(screen.getByLabelText("OpenAI API key"), {
+      target: { value: "sk-test-openai-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Save key/ }));
+    await waitFor(() =>
+      expect(platform.setProviderApiKey).toHaveBeenCalledWith(
+        "openai",
+        "sk-test-openai-key",
+      ),
+    );
+
+    // Suggest 3 summary angles & apply one
+    vi.mocked(platform.generateSummaryOptions).mockResolvedValue({
+      options: [
+        { label: "Impact-focused", summary: "Impact-driven design leader." },
+        { label: "Systems-focused", summary: "Design systems architect." },
+        { label: "Leadership-focused", summary: "Cross-functional mentor." },
+      ],
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Send this content to OpenAI API/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Suggest 3 summary angles" }),
+    );
+    await screen.findByRole("region", { name: "Summary options" });
+    fireEvent.click(screen.getAllByRole("button", { name: /Use summary/ })[0]);
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      "Impact-driven design leader.",
+    );
+
+    // Single-role tailoring with 2-model factual grounding badges
+    vi.mocked(platform.tailorExperienceRole).mockResolvedValue({
+      entryId: original.experience[0].id,
+      bullets: original.experience[0].bullets.map(
+        (_, idx) => `Role tailored bullet ${idx}`,
+      ),
+      notes: [],
+      verification: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        items: [
+          {
+            key: "bullet:0",
+            status: "supported",
+            note: "Directly grounded in source bullet.",
+          },
+          {
+            key: "bullet:1",
+            status: "inferred",
+            note: "Scope phrasing inferred; verify before applying.",
+          },
+        ],
+      },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Send this content to OpenAI API/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Tailor role" }));
+    await screen.findByRole("region", { name: "Role suggestions" });
+    expect(screen.getByText("Supported")).toBeVisible();
+    expect(screen.getByText("Inferred — check")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Apply role suggestions" }),
+    );
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      "Role tailored bullet 0",
+    );
+
+    // Keyword-aware APR ("Coach APR" from missing JD keyword)
+    fireEvent.change(screen.getByLabelText("Job description"), {
+      target: { value: "Requires GraphQL and design systems expertise." },
+    });
+    fireEvent.click(screen.getByLabelText("Coach accomplishment for graphql"));
+    expect(screen.getByText(/Target skill focus:/)).toBeVisible();
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
+    );
+    vi.mocked(platform.analyzeAccomplishment).mockResolvedValue({
+      target: {
+        resumeId: original.id,
+        experienceId: original.experience[0].id,
+        bulletIndex: 0,
+        role: original.experience[0].role,
+        bullet: "Role tailored bullet 0",
+        focusKeyword: "graphql",
+      },
+      action: { status: "clear", feedback: "Clear verb." },
+      project: { status: "clear", feedback: "Named system." },
+      result: { status: "partial", feedback: "Add metric." },
+      rewrite: "Delivered GraphQL-backed UI components.",
+      questions: ["Did this role involve GraphQL schema design?"],
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /Send this selected bullet and role \(with target keyword “graphql”\)/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm APR analysis" }),
+    );
+    await screen.findByRole("region", { name: "APR analysis" });
+    expect(platform.analyzeAccomplishment).toHaveBeenCalledWith(
+      expect.objectContaining({ focusKeyword: "graphql" }),
+      true,
+    );
   });
 });

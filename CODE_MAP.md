@@ -1,49 +1,97 @@
 # Hireloom Code Map
 
-This map answers "where does this behavior live?" For architectural reasoning
-and trust boundaries, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Keep this file
+This map answers "where does this behavior live?" Every production `.ts`, `.tsx`,
+`.rs`, and `.css` module is intentionally sized `<20 KB` so a single `view`
+reads the complete file without truncation. For architectural reasoning and
+trust boundaries, see [`ARCHITECTURE.md`](ARCHITECTURE.md). Keep this file
 current when files or responsibilities change.
 
 ## Runtime entry points
 
-| Location                | Responsibility                                                                                                                                 |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.html`            | Browser/Tauri webview HTML shell and application metadata                                                                                      |
-| `src/main.tsx`          | React root and Strict Mode entry point                                                                                                         |
-| `src/App.tsx`           | Top-level studio orchestration, resume library, import/export, whole-resume and APR answer/refinement review state, dialogs, and notifications |
-| `src-tauri/src/main.rs` | Native binary entry point; delegates to `hireloom_lib::run`                                                                                    |
-| `src-tauri/src/lib.rs`  | Tauri application builder, commands, native validation, local persistence, export, and Copilot subprocess boundary                             |
+| Location                | Responsibility                                                                                                 |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `index.html`            | Browser/Tauri webview HTML shell and application metadata                                                      |
+| `src/main.tsx`          | React root and Strict Mode entry point                                                                         |
+| `src/App.tsx`           | Top-level studio shell orchestration, document/history state, Career Library wiring, and hook/pane composition |
+| `src-tauri/src/main.rs` | Native binary entry point; delegates to `hireloom_lib::run`                                                    |
+| `src-tauri/src/lib.rs`  | Tauri application builder, managed state, IPC command handlers, and module wiring                              |
 
-## Frontend
+## Frontend domain, hooks, and document I/O
 
-| Location                           | Responsibility                                                                                                                                                                                                                      |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/model.ts`                     | Zod persistence, whole-resume AI and transient APR analysis/answer/refinement schemas, binding validators, domain types, limits, factories, import validation, exact-target application, readiness, keyword matching, and filenames |
-| `src/useWorkspace.ts`              | Initial load, serialized debounced autosave, dirty/error state, retries, browser unload protection, and native close protection                                                                                                     |
-| `src/platform.ts`                  | Runtime adapter: validated Tauri IPC on desktop, including APR refinement echo checks, and isolated `localStorage`/downloads in browser preview                                                                                     |
-| `src/components/Editor.tsx`        | Accessible content fields and experience/education/skills editing                                                                                                                                                                   |
-| `src/components/CopilotPanel.tsx`  | CLI status/login controls, separate per-request consent, job text, local keyword overlap, whole-resume review, and grouped APR analysis/answer/refinement UI                                                                        |
-| `src/components/ResumePreview.tsx` | Continuous on-screen resume preview                                                                                                                                                                                                 |
-| `src/components/StylePanel.tsx`    | Template and accent selection                                                                                                                                                                                                       |
-| `src/ResumeDocument.tsx`           | Lazy-loaded React PDF document, embedded font registration, pagination, and PDF blob creation                                                                                                                                       |
-| `src/App.css`                      | Application shell, editor, preview, responsive behavior, focus, dialogs, and reduced-motion styling                                                                                                                                 |
-| `src/vite-env.d.ts`                | Vite client type declarations                                                                                                                                                                                                       |
+| Location                            | Responsibility                                                                                                          |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `src/model.ts`                      | Public domain barrel re-exporting all schemas, types, helpers, and builders from `src/model/*`                          |
+| `src/model/schemas.ts`              | Zod Workspace v2 persistence schemas, v1→v2 upgrade, limits, resume/entry factories, and sample resume                  |
+| `src/model/ai.ts`                   | AI provider settings/status, whole-resume & single-role proposals, APR review/refinement schemas, and target validators |
+| `src/model/library.ts`              | Master Career Library schemas, resume-to-library item synchronization, and tailored variant builder                     |
+| `src/model/analysis.ts`             | Keyword triage helpers, page-count estimation, and export filename sanitization                                         |
+| `src/keywords.ts`                   | Curated + dynamic job-description keyword extraction and phrase-boundary matching across all resume sections            |
+| `src/audit.ts`                      | Deterministic local resume quality checks across Completeness, Impact & Verbs, Formatting & Length, and Role Alignment  |
+| `src/diff.ts`                       | Bounded LCS word-level diffing for inline review of AI rewrites                                                         |
+| `src/useWorkspace.ts`               | Initial load (with v1 upgrade), serialized debounced autosave, dirty/error state, retries, and close protection         |
+| `src/hooks/useStudioAiWorkflows.ts` | Studio AI provider status/settings/keys, rewrite generation, selective proposal application, and APR coaching workflows |
+| `src/hooks/useResumeDocumentIo.ts`  | Lazy-loaded PDF/DOCX/JSON backup export and JSON/PDF/DOCX import workflow hook                                          |
+| `src/platform.ts`                   | Runtime adapter: validated Tauri IPC on desktop and isolated `localStorage`/downloads in browser preview                |
+| `src/ResumeDocument.tsx`            | Lazy-loaded React PDF document, embedded font registration, A4/US Letter & density pagination, and PDF blob creation    |
+| `src/docxExport.ts`                 | Lazy-loaded local single-column OpenXML (`.docx`) document & style builder                                              |
+| `src/docx/zipArchive.ts`            | OpenXML run/paragraph XML serializers, XML sanitization, and local CRC32/Deflate ZIP archive writer                     |
+| `src/resumeImport.ts`               | Lazy-loaded PDF/DOCX resume import orchestrator and optional AI-assisted section mapping redactor/merger                |
+| `src/import/extractText.ts`         | Local `.pdf` (`pdfjs-dist` `'self'` worker) and `.docx` (bounded ZIP/XML) line extraction                               |
+| `src/import/parseSections.ts`       | Deterministic resume section heading detection, contact/URL extraction, and heuristic draft parser                      |
+| `src/vite-env.d.ts`                 | Vite client type declarations                                                                                           |
+
+## Frontend components and styles
+
+| Location                                              | Responsibility                                                                                            |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `src/components/studio/StudioShellChrome.tsx`         | Studio navigation rail, topbar, theme switch, workspace/AI status notices, and loading/fatal states       |
+| `src/components/studio/StudioDocumentToolbar.tsx`     | Document title, autosave indicator, undo/redo, PDF/DOCX export, and keyboard-accessible overflow menu     |
+| `src/components/studio/StudioEditPane.tsx`            | Studio tablist (`Content`, `Layout`, `AI`), collapsible Quality Checks drawer, and offline privacy footer |
+| `src/components/studio/StudioPreviewPane.tsx`         | Live preview toolbar (template/page/density summary, zoom controls) and scrollable paper canvas           |
+| `src/components/studio/ResumeLibraryView.tsx`         | "My resumes" document management grid (create, open, duplicate, delete, import, backup)                   |
+| `src/components/studio/StudioDialogs.tsx`             | Accessible modal dialogs for confirmed resume deletion, PDF/DOCX import review, and font license display  |
+| `src/components/CareerLibraryView.tsx`                | Master Career Library view and interactive tailored-resume variant builder                                |
+| `src/components/studio/CareerLibrarySectionCards.tsx` | Career Library canonical item cards for Experience, Projects, Education, Certifications, and Skill Groups |
+| `src/components/Editor.tsx`                           | Top-level resume content editor (personal details, summary, section focus jumps, section composition)     |
+| `src/components/editor/FieldPrimitives.tsx`           | Shared accessible `Field`, `MonthYearPicker`, `BulletListEditor`, and `MoveButtons` controls              |
+| `src/components/editor/ExperienceSection.tsx`         | Collapsible Experience cards with inline APR coaching and Career Library sync                             |
+| `src/components/editor/ProjectsSection.tsx`           | Collapsible Projects cards with inline APR coaching and Career Library sync                               |
+| `src/components/editor/CredentialsSections.tsx`       | Collapsible Education and Certifications editor sections                                                  |
+| `src/components/editor/SkillsAndCustomSections.tsx`   | Categorized Skill Groups, interactive flat skill chips, and user-defined Custom Sections                  |
+| `src/components/CopilotPanel.tsx`                     | AI studio panel orchestrating provider settings, rewrite consent, keyword triage, proposals, and APR      |
+| `src/components/copilot/ProposalPrimitives.tsx`       | Shared `WordDiffText` and `GroundingBadge` review primitives                                              |
+| `src/components/copilot/ProviderConnectionCard.tsx`   | Collapsible AI provider/model/verifier settings, OS credential key controls, and Copilot CLI sign-in      |
+| `src/components/copilot/KeywordTriageCard.tsx`        | Interactive job-description keyword chips (`Add skill`, `Skip`, `Restore`)                                |
+| `src/components/copilot/RewriteProposalsSection.tsx`  | Whole-resume and single-role selective proposal cards with per-item `Include` / `Keep original` toggles   |
+| `src/components/copilot/AprCoachingSection.tsx`       | APR accomplishment target picker, rubric feedback, Q&A inputs, and initial/refined rewrite comparison     |
+| `src/components/ResumePreview.tsx`                    | Live on-screen resume preview honoring section order, page size, density, and measured page-break markers |
+| `src/components/StylePanel.tsx`                       | Template, accent, page-size (`A4` / `US Letter`), spacing density, and section-order controls             |
+| `src/App.css`                                         | CSS entry sheet importing the four `<20 KB` stylesheets under `src/styles/`                               |
+| `src/styles/base-and-editor.css`                      | Core tokens, studio shell baseline, buttons, form controls, and editor card styles                        |
+| `src/styles/preview-and-copilot.css`                  | Resume paper preview, templates, Copilot panel, APR cards, and style-picker styles                        |
+| `src/styles/library-and-v2.css`                       | Resume library, quality checks, word diffs, skill groups, Career Library, and import dialog styles        |
+| `src/styles/theme-and-ai.css`                         | 100dvh studio viewport, WCAG 2.2 AA light/dark theme tokens, split-pane resizer, and AI provider UI       |
 
 ## Native backend
 
-`src-tauri/src/lib.rs` is intentionally one native module in the current MVP.
-Its internal areas are:
+`src-tauri/src/` is organized into focused `<20 KB` modules wired by `lib.rs`:
 
-| Area                | Key symbols                                                                                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Shared contract     | `Resume`, `Workspace`, `AiProposal`, APR target/analysis/question-answer/refinement DTOs, nested DTOs, enums, and size/count constants                             |
-| Tauri commands      | `load_workspace`, `save_workspace`, `export_document`, `copilot_status`, `copilot_login`, `generate_resume`, `analyze_accomplishment`, `refine_accomplishment`     |
-| Persistence         | `workspace_path`, `load_workspace_from_path`, `serialize_valid_workspace`, `write_atomic`                                                                          |
-| Validation          | `validate_workspace`, `validate_resume`, `validate_ai_proposal`, export and text validators                                                                        |
-| Copilot isolation   | `COPILOT_MODEL`, `CopilotPaths`, `copilot_paths`, `ensure_copilot_config`, `parse_jsonc`, `configure_copilot_command`, CLI arguments                               |
-| AI request/response | Whole-resume, APR analysis, and answer-refinement prompt builders/parsers, JSON event extraction, local target/pair binding, and the shared isolated prompt runner |
-| Process control     | `run_process`, capped output readers, timeout and error summarization                                                                                              |
-| Application setup   | `run`, managed state, plugin registration, command registration, and exit routing                                                                                  |
+| Location                           | Responsibility                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `src-tauri/src/lib.rs`             | Tauri builder, `CopilotOperationLock`, IPC command entry points, and close/exit routing                                         |
+| `src-tauri/src/contract.rs`        | Serde workspace/resume/Career Library/AI/APR/import DTOs, v1→v2 upgrade types, enums, and size/count constants                  |
+| `src-tauri/src/validation.rs`      | Strict workspace, resume, Career Library, AI proposal, APR target/question/answer, and export byte validators                   |
+| `src-tauri/src/storage.rs`         | App-data `workspace.json` & `ai-settings.json` paths, v1→v2 load parsing, atomic temp-file writes, and owner-only permissions   |
+| `src-tauri/src/copilot.rs`         | Isolated Copilot CLI paths, JSONC config enforcement, allowlisted env/args, process runner, and JSON event stream parser        |
+| `src-tauri/src/providers.rs`       | `ProviderKind`, `AiSettings`, OS keyring `CredentialStore`, API-key resolution, and model/endpoint URL validation               |
+| `src-tauri/src/provider_http.rs`   | Bounded blocking HTTP completion client for OpenAI, Anthropic, Google Gemini, and OpenAI-compatible/Ollama endpoints            |
+| `src-tauri/src/prompts.rs`         | Redacted, delimited untrusted prompt builders for whole-resume, single-role, APR, grounding verifier, and import mapping        |
+| `src-tauri/src/responses.rs`       | Strict JSON parsers/normalizers for whole-resume, single-role, grounding verification, and resume import responses              |
+| `src-tauri/src/apr_responses.rs`   | Strict JSON parsers, unchanged-rewrite normalizers, and target/answer echo binders for APR analysis and refinement              |
+| `src-tauri/src/workflows.rs`       | Provider dispatch (`dispatch_ai_prompt`) and end-to-end native AI + optional grounding-verifier orchestration                   |
+| `src-tauri/src/tests_workspace.rs` | Native unit tests for v2 validation, v1 migration, Career Library invariants, atomic saves, and PDF/DOCX export headers         |
+| `src-tauri/src/tests_ai.rs`        | Native unit tests for Copilot CLI isolation, prompt PII/URL redaction, APR/refinement binding, timeouts, and error handling     |
+| `src-tauri/src/tests_providers.rs` | Native unit tests for multi-provider HTTP adapters, keyring storage, endpoint validation, grounding verifier, and import assist |
 
 Related native configuration:
 
@@ -67,40 +115,45 @@ Related native configuration:
 
 ## Tests
 
-| Location                              | Coverage                                                                                                                                                                      |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/model.test.ts`                   | Workspace validation, whole-resume and APR analysis/refinement contract, binding/application invariants, readiness, keywords, and filenames                                   |
-| `src/App.test.tsx`                    | Load/save failures, serialized saves, separate AI consent, proposal/APR/refinement review, stale detection, failure preservation, exact apply/undo, and AI errors             |
-| `src/test/setup.ts`                   | Vitest DOM setup and cleanup                                                                                                                                                  |
-| `src-tauri/src/lib.rs` `tests` module | Native validation, atomic writes, isolated Copilot config, whole-resume/APR/refinement prompt redaction and parsing, subprocess flags, timeout, and errors                    |
-| `e2e/studio.spec.ts`                  | Browser editing, persistence, APR/refinement negative control, import/export, ATS-relevant PDF headings/read order/content, document management, corrupt data, and pagination |
+| Location                                          | Coverage                                                                                                                                                                                                                            |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/model.test.ts`                               | Workspace v2 validation, v1→v2 migration, Career Library sync/variants, selective AI proposals, APR analysis/refinement contract, dynamic keywords, quality audit, word diffs, DOCX round-trip, and filenames                       |
+| `src/App.test.tsx`                                | Load/save failures, serialized saves, separate AI consent, selective proposal/APR/refinement review, inline APR launch, keyword triage, quality checks, Career Library variants, staleness, and AI errors                           |
+| `src/test/setup.ts`                               | Vitest DOM setup and cleanup                                                                                                                                                                                                        |
+| `src-tauri/src/tests_{workspace,ai,providers}.rs` | Native validation, migration, atomic writes, isolated Copilot CLI, HTTP provider adapters, grounding verification, prompt redaction, and process bounds                                                                             |
+| `e2e/studio.spec.ts`                              | Browser editing, persistence, Projects/Categorized Skills/US Letter/Compact density, DOCX & PDF export, local PDF/DOCX resume import, `@axe-core/playwright` WCAG 2.2 AA scans, ATS PDF reading order, corrupt data, and pagination |
 
 ## Tooling and automation
 
-| Location                               | Responsibility                                                      |
-| -------------------------------------- | ------------------------------------------------------------------- |
-| `package.json` / `package-lock.json`   | JavaScript dependencies and development commands                    |
-| `vite.config.ts`                       | React/Vite build and fixed Tauri development server                 |
-| `vitest.config.ts`                     | Frontend unit/component test configuration                          |
-| `playwright.config.ts`                 | Chromium/WebKit browser tests and local Vite server                 |
-| `tsconfig.json` / `tsconfig.node.json` | Strict application and tooling TypeScript configuration             |
-| `.github/workflows/checks.yml`         | Frontend and cross-platform native CI                               |
-| `.github/copilot-instructions.md`      | Concise repository constraints supplied to GitHub Copilot           |
-| `.run/*.run.xml`                       | Shared IntelliJ IDEA/RustRover development and check configurations |
-| `.prettierignore`                      | Formatter exclusions                                                |
-| `.gitignore` / `src-tauri/.gitignore`  | Generated and private-data exclusions                               |
-| `.vscode/extensions.json`              | Recommended editor extensions                                       |
+| Location                               | Responsibility                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `package.json` / `package-lock.json`   | JavaScript dependencies, full verification commands, and low-noise `check:fast` / `*:quiet` runs |
+| `vite.config.ts`                       | React/Vite build and fixed Tauri development server                                              |
+| `vitest.config.ts`                     | Frontend unit/component test configuration                                                       |
+| `playwright.config.ts`                 | Chromium/WebKit browser tests and local Vite server                                              |
+| `tsconfig.json` / `tsconfig.node.json` | Strict application and tooling TypeScript configuration                                          |
+| `.github/workflows/checks.yml`         | Frontend and cross-platform native CI                                                            |
+| `PRODUCT.md`                           | Product vision, personas, positioning, core journeys, capabilities, and non-goals                |
+| `.github/copilot-instructions.md`      | Concise repository invariant summary aligned with `AGENTS.md`                                    |
+| `.run/*.run.xml`                       | Shared IntelliJ IDEA/RustRover development and check configurations                              |
+| `.ignore`                              | Ripgrep/code-search exclusions for lockfiles, build outputs, binary fonts, and icons             |
+| `.prettierignore`                      | Formatter exclusions                                                                             |
+| `.gitignore` / `src-tauri/.gitignore`  | Generated and private-data exclusions                                                            |
+| `.vscode/extensions.json`              | Recommended editor extensions                                                                    |
 
 ## Common change paths
 
-| Goal                               | Start here                            | Usually also inspect                                                      |
-| ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------------- |
-| Change resume fields or limits     | `src/model.ts`                        | `src-tauri/src/lib.rs`, editor, preview, PDF, tests, backup compatibility |
-| Change autosave or recovery        | `src/useWorkspace.ts`                 | `src/platform.ts`, `App.tsx`, frontend and E2E tests                      |
-| Change desktop storage or exports  | `src-tauri/src/lib.rs`                | `src/platform.ts`, Tauri capabilities/config, native tests                |
-| Change browser preview behavior    | `src/platform.ts`                     | `App.tsx`, Playwright tests, README privacy/storage text                  |
-| Change AI prompt or proposal shape | `src-tauri/src/lib.rs`                | `src/model.ts`, `platform.ts`, `CopilotPanel.tsx`, native/frontend tests  |
-| Change editing UI                  | `src/components/Editor.tsx`           | `App.tsx`, preview/PDF, accessibility and browser tests                   |
-| Change visual templates            | `StylePanel.tsx`, `ResumePreview.tsx` | `ResumeDocument.tsx`, `App.css`, PDF E2E coverage                         |
-| Add a Tauri command                | `src-tauri/src/lib.rs`                | `src/platform.ts`, capabilities, contract tests, architecture docs        |
-| Add a dependency or command        | Relevant manifest                     | lockfile, CI workflow, README development steps                           |
+| Goal                               | Start here                                                | Usually also inspect                                                               |
+| ---------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Change resume fields or limits     | `src/model/schemas.ts`                                    | `src-tauri/src/{contract,validation}.rs`, editor section, preview, PDF/DOCX, tests |
+| Change Career Library or variants  | `src/model/library.ts`, `CareerLibraryView.tsx`           | `CareerLibrarySectionCards.tsx`, `src-tauri/src/validation.rs`, tests              |
+| Change autosave or recovery        | `src/useWorkspace.ts`                                     | `src/platform.ts`, `src/App.tsx`, frontend and E2E tests                           |
+| Change desktop storage or exports  | `src-tauri/src/storage.rs`, `src-tauri/src/lib.rs`        | `src/platform.ts`, `src/hooks/useResumeDocumentIo.ts`, Tauri capabilities, tests   |
+| Change PDF/DOCX import or export   | `src/import/*`, `src/docxExport.ts`, `ResumeDocument.tsx` | `src/docx/zipArchive.ts`, `src/hooks/useResumeDocumentIo.ts`, E2E tests            |
+| Change browser preview behavior    | `src/platform.ts`                                         | `src/App.tsx`, Playwright tests, README privacy/storage text                       |
+| Change AI prompt or proposal shape | `src-tauri/src/{prompts,responses,apr_responses}.rs`      | `src/model/ai.ts`, `useStudioAiWorkflows.ts`, `src/components/copilot/*`, tests    |
+| Change AI providers or credentials | `src-tauri/src/{providers,provider_http,workflows}.rs`    | `ProviderConnectionCard.tsx`, `src/platform.ts`, `tests_providers.rs`              |
+| Change editing UI                  | `src/components/Editor.tsx`, `src/components/editor/*`    | `StudioEditPane.tsx`, preview/PDF, accessibility and browser tests                 |
+| Change visual templates or theme   | `StylePanel.tsx`, `ResumePreview.tsx`, `src/styles/*`     | `ResumeDocument.tsx`, `docxExport.ts`, PDF and axe E2E coverage                    |
+| Add a Tauri command                | `src-tauri/src/lib.rs`                                    | `src/platform.ts`, capabilities, contract tests, architecture docs                 |
+| Add a dependency or command        | Relevant manifest                                         | lockfile, CI workflow, README development steps                                    |

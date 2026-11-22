@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { errorMessage, initialWorkspace, type Workspace } from "./model";
+import {
+  errorMessage,
+  initialWorkspace,
+  upgradeWorkspace,
+  type Workspace,
+} from "./model";
 import { desktop, loadWorkspace, saveWorkspace } from "./platform";
 
 export function useWorkspace() {
@@ -17,7 +22,8 @@ export function useWorkspace() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const saved = await loadWorkspace();
+      const rawSaved = await loadWorkspace();
+      const saved = rawSaved ? upgradeWorkspace(rawSaved) : null;
       const next = saved ?? initialWorkspace();
       persisted.current = saved ? JSON.stringify(saved) : null;
       setSavedSnapshot(persisted.current);
