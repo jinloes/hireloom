@@ -29,6 +29,7 @@ export function ProviderConnectionCard({
   providerStates,
   providerReady,
   busy,
+  defaultExpanded = false,
   onRefresh,
   onLogin,
   onSaveAiSettings,
@@ -40,6 +41,7 @@ export function ProviderConnectionCard({
   providerStates: ProviderCredentialStatus[];
   providerReady: boolean;
   busy: AiBusyKind;
+  defaultExpanded?: boolean;
   onRefresh: () => void;
   onLogin: () => void;
   onSaveAiSettings?: (next: AiSettings) => void;
@@ -147,7 +149,7 @@ export function ProviderConnectionCard({
         </p>
       )}
 
-      <details className="provider-settings-details">
+      <details className="provider-settings-details" open={defaultExpanded}>
         <summary>
           <Settings2 size={14} /> Provider, model &amp; 2-model verification
         </summary>

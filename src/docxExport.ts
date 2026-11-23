@@ -1,18 +1,64 @@
 import {
   accents,
   formatYearMonth,
+  normalizeExternalUrl,
   type Resume,
   type SectionKey,
 } from "./model";
-import { buildZipArchive, renderParagraph } from "./docx/zipArchive";
+import {
+  buildZipArchive,
+  escapeXml,
+  renderParagraph,
+  type RunSpec,
+} from "./docx/zipArchive";
 
 function buildDocumentXml(resume: Resume): {
   documentXml: string;
   stylesXml: string;
+  externalLinks: { id: string; target: string }[];
 } {
   const accentHex = accents[resume.accent].replace("#", "");
   const bodyFont = "Calibri";
   const headingFont = resume.template === "editorial" ? "Georgia" : "Calibri";
+  const hyperlinkIds = new Map<string, string>();
+  const externalLinks: { id: string; target: string }[] = [];
+
+  const registerHyperlink = (raw: string): string | undefined => {
+    const normalized = normalizeExternalUrl(raw);
+    if (!normalized) return undefined;
+    const existing = hyperlinkIds.get(normalized);
+    if (existing) return existing;
+    const id = `rId${externalLinks.length + 2}`;
+    hyperlinkIds.set(normalized, id);
+    externalLinks.push({ id, target: normalized });
+    return id;
+  };
+
+  const buildInlineRuns = (
+    items: { text: string; link?: boolean }[],
+    separator: string,
+    sizeHalfPt: number,
+    color = "57605E",
+  ): RunSpec[] => {
+    const visible = items
+      .map((item) => ({ text: item.text.trim(), link: item.link }))
+      .filter((item) => item.text.length > 0);
+    const runs: RunSpec[] = [];
+    visible.forEach((item, index) => {
+      if (index > 0) {
+        runs.push({ text: separator, sizeHalfPt, color });
+      }
+      const hyperlinkId = item.link ? registerHyperlink(item.text) : undefined;
+      runs.push({
+        text: item.text,
+        sizeHalfPt,
+        color: hyperlinkId ? accentHex : color,
+        underline: Boolean(hyperlinkId),
+        hyperlinkId,
+      });
+    });
+    return runs;
+  };
 
   const pageWidthTwips = resume.pageSize === "letter" ? 12240 : 11906;
   const pageHeightTwips = resume.pageSize === "letter" ? 15840 : 16838;
@@ -63,13 +109,17 @@ function buildDocumentXml(resume: Resume): {
     ),
   );
 
-  const contactItems = [
-    resume.basics.email,
-    resume.basics.phone,
-    resume.basics.location,
-    resume.basics.website,
-    resume.basics.github,
-  ].filter((item) => item.trim());
+  const contactRuns = buildInlineRuns(
+    [
+      { text: resume.basics.email },
+      { text: resume.basics.phone },
+      { text: resume.basics.location },
+      { text: resume.basics.website, link: true },
+      { text: resume.basics.github, link: true },
+    ],
+    "  ·  ",
+    smallHalfPt,
+  );
 
   if (resume.basics.headline.trim()) {
     paragraphs.push(
@@ -83,29 +133,20 @@ function buildDocumentXml(resume: Resume): {
         ],
         {
           spaceBefore: 0,
-          spaceAfter: contactItems.length ? 40 : 120,
-          borderBottomColor: contactItems.length ? undefined : accentHex,
+          spaceAfter: contactRuns.length ? 40 : 120,
+          borderBottomColor: contactRuns.length ? undefined : accentHex,
         },
       ),
     );
   }
 
-  if (contactItems.length > 0) {
+  if (contactRuns.length > 0) {
     paragraphs.push(
-      renderParagraph(
-        [
-          {
-            text: contactItems.join("  ·  "),
-            sizeHalfPt: smallHalfPt,
-            color: "57605E",
-          },
-        ],
-        {
-          spaceBefore: 0,
-          spaceAfter: 120,
-          borderBottomColor: accentHex,
-        },
-      ),
+      renderParagraph(contactRuns, {
+        spaceBefore: 0,
+        spaceAfter: 120,
+        borderBottomColor: accentHex,
+      }),
     );
   }
 
@@ -262,15 +303,18 @@ function buildDocumentXml(resume: Resume): {
               },
             ),
           );
-          const subLine = [project.subtitle, project.url]
-            .filter((v) => v.trim())
-            .join(" · ");
-          if (subLine) {
+          const subRuns = buildInlineRuns(
+            [{ text: project.subtitle }, { text: project.url, link: true }],
+            " · ",
+            smallHalfPt,
+          );
+          if (subRuns.length > 0) {
             paragraphs.push(
-              renderParagraph(
-                [{ text: subLine, sizeHalfPt: smallHalfPt, color: "57605E" }],
-                { spaceBefore: 0, spaceAfter: 40, keepNext: true },
-              ),
+              renderParagraph(subRuns, {
+                spaceBefore: 0,
+                spaceAfter: 40,
+                keepNext: true,
+              }),
             );
           }
           for (const bullet of project.bullets) {
@@ -332,9 +376,11 @@ function buildDocumentXml(resume: Resume): {
         if (!resume.certifications.length) return;
         pushSectionHeading("Certifications");
         resume.certifications.forEach((cert, index) => {
-          const meta = [cert.issuer, cert.url]
-            .filter((v) => v.trim())
-            .join(" · ");
+          const metaRuns = buildInlineRuns(
+            [{ text: cert.issuer }, { text: cert.url, link: true }],
+            " · ",
+            bodyHalfPt,
+          );
           paragraphs.push(
             renderParagraph(
               [
@@ -344,13 +390,14 @@ function buildDocumentXml(resume: Resume): {
                   sizeHalfPt: bodyHalfPt,
                   color: "303C39",
                 },
-                ...(meta
+                ...(metaRuns.length > 0
                   ? [
                       {
-                        text: ` — ${meta}`,
+                        text: " — ",
                         sizeHalfPt: bodyHalfPt,
                         color: "57605E",
                       },
+                      ...metaRuns,
                     ]
                   : []),
                 ...(cert.date.trim()
@@ -497,7 +544,7 @@ function buildDocumentXml(resume: Resume): {
   const sectPr = `<w:sectPr><w:pgSz w:w="${pageWidthTwips}" w:h="${pageHeightTwips}"/><w:pgMar w:top="${marginTwips}" w:right="${marginTwips}" w:bottom="${marginTwips}" w:left="${marginTwips}" w:header="480" w:footer="480" w:gutter="0"/></w:sectPr>`;
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <w:body>
     ${paragraphs.join("\n    ")}
     ${sectPr}
@@ -533,11 +580,11 @@ function buildDocumentXml(resume: Resume): {
   </w:style>
 </w:styles>`;
 
-  return { documentXml, stylesXml };
+  return { documentXml, stylesXml, externalLinks };
 }
 
 export async function createDocxBytes(resume: Resume): Promise<Uint8Array> {
-  const { documentXml, stylesXml } = buildDocumentXml(resume);
+  const { documentXml, stylesXml, externalLinks } = buildDocumentXml(resume);
   const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -551,9 +598,16 @@ export async function createDocxBytes(resume: Resume): Promise<Uint8Array> {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
 </Relationships>`;
 
+  const externalRelsXml = externalLinks
+    .map(
+      (link) =>
+        `  <Relationship Id="${escapeXml(link.id)}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapeXml(link.target)}" TargetMode="External"/>`,
+    )
+    .join("\n");
+
   const docRelsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${externalRelsXml ? `\n${externalRelsXml}` : ""}
 </Relationships>`;
 
   return buildZipArchive([

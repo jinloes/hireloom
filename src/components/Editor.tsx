@@ -141,7 +141,7 @@ export function Editor({
                 placeholder="What do you do well? What experience and perspective will you bring to your next team?"
               />
               <button className="ai-text-button" onClick={onAi}>
-                <Sparkles size={14} /> Find the right words with Copilot
+                <Sparkles size={14} /> Tailor &amp; coach with AI
               </button>
             </div>
           </details>

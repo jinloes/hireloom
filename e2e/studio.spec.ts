@@ -51,7 +51,7 @@ test("edits, saves, and reloads a local resume", async ({ page }) => {
   await expect(page.getByLabel("GitHub URL", { exact: true })).toHaveValue(
     "https://github.com/taylor-example",
   );
-  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
+  await page.getByRole("tab", { name: "Tailor & Coach", exact: true }).click();
   await expect(
     page.getByText("Copilot is available in the desktop app.", {
       exact: false,
@@ -88,7 +88,8 @@ test("example, design, PDF text, backups, duplicate and delete", async ({
   await expect(page.getByTestId("resume-preview")).toContainText(
     "Mar 2021 – Sep 2025",
   );
-  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
+  await page.getByRole("tab", { name: "Tailor & Coach", exact: true }).click();
+  await page.getByRole("button", { name: /APR Bullet Coach/ }).click();
   const aprActions = page.getByRole("button", { name: "Analyze with APR" });
   await expect(aprActions.first()).toBeVisible();
   await aprActions.first().click();
@@ -483,10 +484,12 @@ test("meets WCAG 2.2 AA contrast and ARIA rules across light, dark, menus, and p
     .analyze();
   expect(formatViolations(lightScan.violations)).toEqual([]);
 
-  // Check Copilot tab with provider settings, keyword triage, skipped keywords, and Coach APR banner
-  await page.getByRole("tab", { name: "Copilot", exact: true }).click();
-  await page.getByText("Provider, model & 2-model verification").click();
+  // Check Tailor & Coach sub-views (Provider Setup, Role Tailoring, APR Bullet Coach)
+  await page.getByRole("tab", { name: "Tailor & Coach", exact: true }).click();
+  await page.getByRole("button", { name: /Provider Setup/ }).click();
   await expect(page.getByLabel("Primary AI provider")).toBeVisible();
+
+  await page.getByRole("button", { name: /Role Tailoring/ }).click();
   await page
     .getByLabel("Job description")
     .fill("Senior Designer with Figma, FastAPI, and Kubernetes.");
@@ -494,10 +497,20 @@ test("meets WCAG 2.2 AA contrast and ARIA rules across light, dark, menus, and p
   await page.getByLabel("Coach accomplishment for fastapi").click();
   await expect(page.getByText("Target skill focus:")).toBeVisible();
 
+  // Check PDF proof and Compare preview modes before jumping back to Live sheet
+  await page.getByRole("button", { name: "PDF proof" }).click();
+  await expect(page.getByTitle("Exact PDF page proof")).toBeVisible();
+  await expect(page.getByText(/Verified local PDF output:/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Compare" }).click();
+  await expect(page.getByTestId("variant-compare-view")).toBeVisible();
+
   const copilotScan = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
     .analyze();
   expect(formatViolations(copilotScan.violations)).toEqual([]);
+
+  await page.getByRole("button", { name: "Live sheet" }).click();
 
   // Click section on live preview to jump back to Content tab and open Education
   await page

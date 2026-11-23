@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createResume,
   errorMessage,
@@ -8,6 +8,12 @@ import {
   type SectionKey,
 } from "./model";
 import { desktop } from "./platform";
+import {
+  loadUiPreferences,
+  saveUiPreferences,
+  type PreviewZoom,
+  type StudioTheme,
+} from "./uiPreferences";
 import { useWorkspace } from "./useWorkspace";
 import { useResumeDocumentIo } from "./hooks/useResumeDocumentIo";
 import {
@@ -35,7 +41,6 @@ import {
   StudioSidebar,
   StudioTopbar,
   WorkspaceHeading,
-  type StudioTheme,
   type WorkspaceView,
 } from "./components/studio/StudioShellChrome";
 import "./App.css";
@@ -65,15 +70,20 @@ function App() {
   const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showLicense, setShowLicense] = useState(false);
-  const [theme, setTheme] = useState<StudioTheme>(() =>
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light",
+  const initialPrefs = useMemo(() => loadUiPreferences(), []);
+  const [theme, setTheme] = useState<StudioTheme>(initialPrefs.theme);
+  const [editorWidthPct, setEditorWidthPct] = useState<number>(
+    initialPrefs.editorWidthPct,
   );
-  const [editorWidthPct, setEditorWidthPct] = useState(40);
-  const [previewZoom, setPreviewZoom] = useState<90 | 100 | 125>(100);
+  const [previewZoom, setPreviewZoom] = useState<PreviewZoom>(
+    initialPrefs.previewZoom,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    initialPrefs.sidebarCollapsed,
+  );
+  const [aiPromoDismissed, setAiPromoDismissed] = useState<boolean>(
+    initialPrefs.aiPromoDismissed,
+  );
   const [focusRequest, setFocusRequest] = useState<EditorFocusRequest | null>(
     null,
   );
@@ -83,6 +93,10 @@ function App() {
 
   const resume = workspace?.resumes.find(
     (item) => item.id === workspace.activeResumeId,
+  );
+  const resumeSnapshot = useMemo(
+    () => (resume ? JSON.stringify(resume) : ""),
+    [resume],
   );
   const report = (error: unknown) =>
     setNotice({ kind: "error", text: errorMessage(error) });
@@ -130,6 +144,7 @@ function App() {
 
   const ai = useStudioAiWorkflows({
     resume,
+    resumeSnapshot,
     applyResumeDirect,
     recordAiHistory: (previous) => recordHistory(previous, "ai", true),
     setNotice,
@@ -183,6 +198,16 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    saveUiPreferences({
+      theme,
+      editorWidthPct,
+      previewZoom,
+      sidebarCollapsed,
+      aiPromoDismissed,
+    });
+  }, [theme, editorWidthPct, previewZoom, sidebarCollapsed, aiPromoDismissed]);
 
   function changeResume(next: Resume, meta?: ChangeMeta) {
     if (resume && resume.id === next.id) {
@@ -243,9 +268,14 @@ function App() {
 
   useEffect(() => {
     const onGlobalKeyDown = (event: KeyboardEvent) => {
-      if (blocked || view !== "studio") return;
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
+      if (event.key === "\\") {
+        event.preventDefault();
+        setSidebarCollapsed((current) => !current);
+        return;
+      }
+      if (blocked || view !== "studio") return;
       const active = document.activeElement;
       const isTextControl =
         active instanceof HTMLInputElement ||
@@ -348,9 +378,12 @@ function App() {
       updatedAt: new Date().toISOString(),
     });
 
+  const toggleTheme = () =>
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+
   return (
     <div
-      className={`app-shell ${view === "studio" ? "app-shell--studio" : ""}`}
+      className={`app-shell ${view === "studio" ? "app-shell--studio" : ""} ${sidebarCollapsed ? "app-shell--sidebar-collapsed" : ""}`}
     >
       <StudioSidebar
         workspace={workspace}
@@ -358,7 +391,8 @@ function App() {
         view={view}
         careerLibraryCount={careerLibraryCount}
         allBusy={allBusy}
-        blocked={blocked}
+        collapsed={sidebarCollapsed}
+        aiPromoDismissed={aiPromoDismissed}
         onSetView={setView}
         onAddResume={() => addResume()}
         onSelectResume={selectResume}
@@ -366,16 +400,20 @@ function App() {
           setTab("copilot");
           setView("studio");
         }}
+        onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+        onDismissAiPromo={() => setAiPromoDismissed(true)}
       />
       <main className="main-content">
-        <StudioTopbar
-          view={view}
-          theme={theme}
-          candidateInitial={resume.basics.name.slice(0, 1).toUpperCase() || "H"}
-          onToggleTheme={() =>
-            setTheme((current) => (current === "dark" ? "light" : "dark"))
-          }
-        />
+        {view !== "studio" && (
+          <StudioTopbar
+            view={view}
+            theme={theme}
+            candidateInitial={
+              resume.basics.name.slice(0, 1).toUpperCase() || "H"
+            }
+            onToggleTheme={toggleTheme}
+          />
+        )}
         {notice && (
           <NoticeBanner
             notice={notice}
@@ -437,6 +475,7 @@ function App() {
           <section className="studio-frame" aria-label="Resume studio">
             <StudioDocumentToolbar
               resume={resume}
+              theme={theme}
               blocked={blocked}
               allBusy={allBusy}
               saving={saving}
@@ -445,6 +484,7 @@ function App() {
               exporting={io.exporting}
               topUndoSource={topUndo?.source ?? null}
               hasRedo={Boolean(topRedo)}
+              onToggleTheme={toggleTheme}
               onChangeResume={changeResume}
               onUndo={performUndo}
               onRedo={performRedo}
@@ -480,9 +520,9 @@ function App() {
             >
               <StudioEditPane
                 resume={resume}
+                resumeSnapshot={resumeSnapshot}
                 careerLibrary={workspace.careerLibrary}
                 tab={tab}
-                blocked={blocked}
                 focusRequest={focusRequest}
                 ai={ai}
                 onSetTab={setTab}
@@ -516,7 +556,8 @@ function App() {
               />
               <StudioPreviewPane
                 resume={resume}
-                blocked={blocked}
+                resumes={workspace.resumes}
+                careerLibrary={workspace.careerLibrary}
                 previewZoom={previewZoom}
                 showAudit={showAudit}
                 onSetPreviewZoom={setPreviewZoom}
@@ -574,6 +615,7 @@ function App() {
           onCleanUpWithAi={(importConsent) =>
             void io.cleanUpImportWithAi(importConsent)
           }
+          onCancelAiCleanup={() => void io.cancelImportCleanup()}
           onCancel={() => io.setImportDraft(null)}
           onConfirm={io.confirmImportedResume}
         />

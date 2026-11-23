@@ -1,4 +1,6 @@
-pub use crate::provider_http::{run_http_provider_prompt, HttpEndpoints};
+#[cfg(test)]
+pub use crate::provider_http::run_http_provider_prompt;
+pub use crate::provider_http::{run_http_provider_prompt_cancellable, HttpEndpoints};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::{env, path::Path};

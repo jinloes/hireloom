@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   applyAprRewrite,
   applyPartialProposal,
@@ -24,10 +24,12 @@ import {
 import {
   aiProviderStatus,
   analyzeAccomplishment,
+  cancelAiRequest,
   clearProviderApiKey,
   copilotStatus,
   generateResume,
   generateSummaryOptions,
+  isAiCancelledError,
   loginToCopilot,
   refineAccomplishment,
   saveAiSettings,
@@ -82,17 +84,20 @@ function hasDraftFacts(target: Resume): boolean {
 
 export function useStudioAiWorkflows({
   resume,
+  resumeSnapshot,
   applyResumeDirect,
   recordAiHistory,
   setNotice,
   report,
 }: {
   resume: Resume | undefined;
+  resumeSnapshot: string;
   applyResumeDirect: (next: Resume) => void;
   recordAiHistory: (previous: Resume) => void;
   setNotice: (notice: StudioNotice | null) => void;
   report: (error: unknown) => void;
 }) {
+  const requestSeq = useRef(0);
   const [aiSettings, setAiSettings] = useState<AiSettings>(() =>
     defaultAiSettings(),
   );
@@ -224,19 +229,43 @@ export function useStudioAiWorkflows({
     }
   }
 
+  function handleAiError(error: unknown) {
+    if (isAiCancelledError(error)) {
+      setNotice({
+        kind: "success",
+        text: "AI request cancelled. Your resume has not been changed.",
+      });
+      return;
+    }
+    report(error);
+  }
+
+  const cancelActiveRequest = useCallback(async () => {
+    requestSeq.current += 1;
+    setBusy(null);
+    await cancelAiRequest();
+    setNotice({
+      kind: "success",
+      text: "AI request cancelled. Your resume has not been changed.",
+    });
+  }, [setNotice]);
+
   async function login() {
+    requestSeq.current += 1;
+    const seq = requestSeq.current;
     setBusy("login");
     try {
       await loginToCopilot();
+      if (requestSeq.current !== seq) return;
       setNotice({
         kind: "success",
         text: "GitHub sign-in completed. You can now request a resume rewrite.",
       });
       setCopilot(await copilotStatus());
     } catch (error) {
-      report(error);
+      if (requestSeq.current === seq) handleAiError(error);
     } finally {
-      setBusy(null);
+      if (requestSeq.current === seq) setBusy(null);
     }
   }
 
@@ -250,14 +279,15 @@ export function useStudioAiWorkflows({
       );
       return;
     }
-    const source = JSON.stringify(resume);
+    requestSeq.current += 1;
+    const seq = requestSeq.current;
+    const source = resumeSnapshot;
     setBusy("generate");
     setSuggestion(null);
     try {
-      const value = validateProposal(
-        await generateResume(resume, consent),
-        resume,
-      );
+      const raw = await generateResume(resume, consent);
+      if (requestSeq.current !== seq) return;
+      const value = validateProposal(raw, resume);
       setSuggestion({
         value,
         source,
@@ -268,10 +298,12 @@ export function useStudioAiWorkflows({
         text: "Your suggestions are ready to review. Your resume has not been changed.",
       });
     } catch (error) {
-      report(error);
+      if (requestSeq.current === seq) handleAiError(error);
     } finally {
-      setBusy(null);
-      setConsent(false);
+      if (requestSeq.current === seq) {
+        setBusy(null);
+        setConsent(false);
+      }
     }
   }
 
@@ -285,27 +317,32 @@ export function useStudioAiWorkflows({
       );
       return;
     }
-    const source = JSON.stringify(resume);
+    requestSeq.current += 1;
+    const seq = requestSeq.current;
+    const source = resumeSnapshot;
     setBusy("summaryOptions");
     setSummarySuggestion(null);
     try {
       const value = await generateSummaryOptions(resume, consent);
+      if (requestSeq.current !== seq) return;
       setSummarySuggestion({ value, source });
       setNotice({
         kind: "success",
         text: "Three summary angles are ready to review. Your resume has not been changed.",
       });
     } catch (error) {
-      report(error);
+      if (requestSeq.current === seq) handleAiError(error);
     } finally {
-      setBusy(null);
-      setConsent(false);
+      if (requestSeq.current === seq) {
+        setBusy(null);
+        setConsent(false);
+      }
     }
   }
 
   function applySummaryOption(nextSummary: string) {
     if (!resume || !summarySuggestion) return;
-    if (JSON.stringify(resume) !== summarySuggestion.source) {
+    if (resumeSnapshot !== summarySuggestion.source) {
       report(
         new Error(
           "Your resume changed. Generate fresh summary options before applying.",
@@ -325,11 +362,14 @@ export function useStudioAiWorkflows({
 
   async function tailorRole(entryId: string) {
     if (!resume) return;
-    const source = JSON.stringify(resume);
+    requestSeq.current += 1;
+    const seq = requestSeq.current;
+    const source = resumeSnapshot;
     setBusy("tailorRole");
     setRoleSuggestion(null);
     try {
       const value = await tailorExperienceRole(resume, entryId, consent);
+      if (requestSeq.current !== seq) return;
       setRoleSuggestion({
         value,
         source,
@@ -340,16 +380,18 @@ export function useStudioAiWorkflows({
         text: "Role suggestions are ready to review. Your resume has not been changed.",
       });
     } catch (error) {
-      report(error);
+      if (requestSeq.current === seq) handleAiError(error);
     } finally {
-      setBusy(null);
-      setConsent(false);
+      if (requestSeq.current === seq) {
+        setBusy(null);
+        setConsent(false);
+      }
     }
   }
 
   function applyRoleProposal() {
     if (!resume || !roleSuggestion) return;
-    if (JSON.stringify(resume) !== roleSuggestion.source) {
+    if (resumeSnapshot !== roleSuggestion.source) {
       report(
         new Error(
           "Your resume changed. Regenerate role suggestions before applying.",
@@ -378,7 +420,7 @@ export function useStudioAiWorkflows({
 
   function applySuggestions() {
     if (!resume || !suggestion) return;
-    if (JSON.stringify(resume) !== suggestion.source) {
+    if (resumeSnapshot !== suggestion.source) {
       report(
         new Error(
           "Your resume changed. Generate new suggestions before applying.",
@@ -459,10 +501,13 @@ export function useStudioAiWorkflows({
       );
       return;
     }
+    requestSeq.current += 1;
+    const seq = requestSeq.current;
     setBusy("analyze");
     setAprSuggestion(null);
     try {
       const value = await analyzeAccomplishment(aprTarget, aprConsent);
+      if (requestSeq.current !== seq) return;
       setAprSuggestion({ value, source: aprTarget });
       setAprAnswers(value.questions.map(() => ""));
       setAprRefinementConsent(false);
@@ -472,10 +517,12 @@ export function useStudioAiWorkflows({
         text: "Your APR analysis is ready to review. Your resume has not been changed.",
       });
     } catch (error) {
-      report(error);
+      if (requestSeq.current === seq) handleAiError(error);
     } finally {
-      setBusy(null);
-      setAprConsent(false);
+      if (requestSeq.current === seq) {
+        setBusy(null);
+        setAprConsent(false);
+      }
     }
   }
 
@@ -496,6 +543,8 @@ export function useStudioAiWorkflows({
       report(new Error("Answer at least one APR question before refining."));
       return;
     }
+    requestSeq.current += 1;
+    const seq = requestSeq.current;
     setBusy("refine");
     try {
       const value = await refineAccomplishment(
@@ -504,6 +553,7 @@ export function useStudioAiWorkflows({
         answers,
         aprRefinementConsent,
       );
+      if (requestSeq.current !== seq) return;
       setAprRefinement({
         value,
         source: aprSuggestion.source,
@@ -514,10 +564,12 @@ export function useStudioAiWorkflows({
         text: "Your refined rewrite is ready to review. Your resume has not been changed.",
       });
     } catch (error) {
-      report(error);
+      if (requestSeq.current === seq) handleAiError(error);
     } finally {
-      setBusy(null);
-      setAprRefinementConsent(false);
+      if (requestSeq.current === seq) {
+        setBusy(null);
+        setAprRefinementConsent(false);
+      }
     }
   }
 
@@ -604,6 +656,7 @@ export function useStudioAiWorkflows({
     aprRefinement,
     resetApr,
     resetAiTransientForResumeSwitch,
+    cancelActiveRequest,
     refreshCopilot,
     handleSaveAiSettings,
     handleSaveApiKey,

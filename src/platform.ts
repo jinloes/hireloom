@@ -30,6 +30,17 @@ import {
 
 export const desktop = isTauri();
 export const STORAGE_KEY = "hireloom.workspace.v1";
+export const AI_CANCELLED_MESSAGE = "AI request cancelled.";
+
+export function isAiCancelledError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+  return message.trim() === AI_CANCELLED_MESSAGE;
+}
 
 export type CopilotStatus = {
   available: boolean;
@@ -189,6 +200,11 @@ export async function copilotStatus(): Promise<CopilotStatus> {
   return invoke<CopilotStatus>("copilot_status");
 }
 
+export async function cancelAiRequest(): Promise<boolean> {
+  if (!desktop) return false;
+  return invoke<boolean>("cancel_ai_request");
+}
+
 export async function loginToCopilot(): Promise<void> {
   if (!desktop)
     throw new Error("Open the desktop app to sign in to GitHub Copilot.");
@@ -269,7 +285,7 @@ export async function analyzeAccomplishment(
   if (!desktop) throw new Error("APR analysis requires the desktop app.");
   if (!consent)
     throw new Error(
-      "Confirm that you want to send this accomplishment to Copilot.",
+      "Confirm that you want to send this accomplishment to your AI provider.",
     );
   const validTarget = validateAprTarget(target);
   return validateAprAnalysis(
@@ -289,7 +305,9 @@ export async function refineAccomplishment(
 ): Promise<AprRefinement> {
   if (!desktop) throw new Error("APR refinement requires the desktop app.");
   if (!consent)
-    throw new Error("Confirm that you want to send these answers to Copilot.");
+    throw new Error(
+      "Confirm that you want to send these answers to your AI provider.",
+    );
   const validTarget = validateAprTarget(target);
   const validAnswers = validateAprQuestionAnswers(questions, answers);
   return validateAprRefinement(

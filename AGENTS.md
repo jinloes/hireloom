@@ -63,10 +63,11 @@ first:
 - Keep resume data local. Do not add analytics, remote fonts, cloud persistence,
   or background uploads.
 - Treat the browser build as an explicitly labeled preview with independent
-  browser-local storage and no Copilot connection.
+  browser-local storage and no desktop AI provider connection.
 - Require explicit consent for every AI request. Exclude dedicated contact
-  fields, treat all user and job-description text as untrusted, and require
-  review before applying a proposal.
+  fields, treat all user and job-description text as untrusted, store cloud API
+  keys only in the OS credential manager (`keyring`), and require review before
+  applying a proposal.
 - Never let AI invent work history, employers, dates, qualifications,
   responsibilities, achievements, or metrics.
 - Keep the Copilot child process isolated. Do not give it tools, shell access,

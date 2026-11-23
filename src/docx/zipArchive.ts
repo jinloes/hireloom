@@ -29,9 +29,11 @@ export function sanitizeXmlText(value: string): string {
 export type RunSpec = {
   text: string;
   bold?: boolean;
+  underline?: boolean;
   color?: string;
   sizeHalfPt?: number;
   font?: string;
+  hyperlinkId?: string;
 };
 
 export function renderRun(spec: RunSpec): string {
@@ -41,6 +43,7 @@ export function renderRun(spec: RunSpec): string {
     props.push(`<w:rFonts w:ascii="${f}" w:hAnsi="${f}" w:cs="${f}"/>`);
   }
   if (spec.bold) props.push("<w:b/>");
+  if (spec.underline) props.push('<w:u w:val="single"/>');
   if (spec.color) props.push(`<w:color w:val="${spec.color}"/>`);
   if (spec.sizeHalfPt) {
     props.push(
@@ -55,7 +58,10 @@ export function renderRun(spec: RunSpec): string {
       return `${prefix}<w:t xml:space="preserve">${sanitizeXmlText(line)}</w:t>`;
     })
     .join("");
-  return `<w:r>${rPr}${inner}</w:r>`;
+  const runXml = `<w:r>${rPr}${inner}</w:r>`;
+  return spec.hyperlinkId
+    ? `<w:hyperlink r:id="${escapeXml(spec.hyperlinkId)}">${runXml}</w:hyperlink>`
+    : runXml;
 }
 
 export function renderParagraph(

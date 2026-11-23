@@ -1,6 +1,43 @@
 use crate::providers::{AiSettings, ProviderCredentialStatus, ProviderKind};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+
+pub const AI_CANCELLED_MESSAGE: &str = "AI request cancelled.";
+
+#[derive(Clone, Default, Debug)]
+pub struct AiCancelFlag(Arc<AtomicBool>);
+
+impl AiCancelFlag {
+    pub fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    pub fn ensure_not_cancelled(&self) -> CommandResult<()> {
+        if self.is_cancelled() {
+            Err(AI_CANCELLED_MESSAGE.to_string())
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
 
 pub(crate) const WORKSPACE_VERSION: u32 = 2;
 pub(crate) const WORKSPACE_FILE: &str = "workspace.json";

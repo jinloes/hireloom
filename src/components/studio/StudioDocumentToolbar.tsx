@@ -9,18 +9,23 @@ import {
   FileText,
   FileUp,
   LoaderCircle,
+  Moon,
   MoreHorizontal,
   RotateCcw,
   RotateCw,
+  ShieldCheck,
+  Sun,
   Trash2,
   Upload,
 } from "lucide-react";
 import type { Resume } from "../../model";
 import { desktop } from "../../platform";
+import type { StudioTheme } from "../../uiPreferences";
 import type { ChangeMeta } from "../Editor";
 
 export function StudioDocumentToolbar({
   resume,
+  theme,
   blocked,
   allBusy,
   saving,
@@ -29,6 +34,7 @@ export function StudioDocumentToolbar({
   exporting,
   topUndoSource,
   hasRedo,
+  onToggleTheme,
   onChangeResume,
   onUndo,
   onRedo,
@@ -42,6 +48,7 @@ export function StudioDocumentToolbar({
   onExportPdf,
 }: {
   resume: Resume;
+  theme: StudioTheme;
   blocked: boolean;
   allBusy: boolean;
   saving: boolean;
@@ -50,6 +57,7 @@ export function StudioDocumentToolbar({
   exporting: "pdf" | "docx" | null;
   topUndoSource: "ai" | "edit" | "delete" | null;
   hasRedo: boolean;
+  onToggleTheme: () => void;
   onChangeResume: (next: Resume, meta?: ChangeMeta) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -133,6 +141,22 @@ export function StudioDocumentToolbar({
         </div>
       </div>
       <div className="document-actions">
+        <span className="private-badge studio-private-badge">
+          <ShieldCheck size={13} /> Private by default
+        </span>
+        <button
+          type="button"
+          className="icon-button theme-toggle"
+          aria-label={
+            theme === "dark"
+              ? "Switch to light studio theme"
+              : "Switch to dark studio theme"
+          }
+          aria-pressed={theme === "dark"}
+          onClick={onToggleTheme}
+        >
+          {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
         {topUndoSource && (
           <button
             type="button"
@@ -159,6 +183,30 @@ export function StudioDocumentToolbar({
             <RotateCw size={17} />
           </button>
         )}
+        <button
+          className="button secondary export-button"
+          disabled={allBusy}
+          onClick={onExportDocx}
+        >
+          {exporting === "docx" ? (
+            <LoaderCircle size={16} className="spin" />
+          ) : (
+            <FileSpreadsheet size={16} />
+          )}
+          {exporting === "docx" ? "Creating DOCX…" : "Export DOCX"}
+        </button>
+        <button
+          className="button primary export-button"
+          disabled={allBusy}
+          onClick={onExportPdf}
+        >
+          {exporting === "pdf" ? (
+            <LoaderCircle size={16} className="spin" />
+          ) : (
+            <ArrowDownToLine size={16} />
+          )}
+          {exporting === "pdf" ? "Creating PDF…" : "Export PDF"}
+        </button>
         <div className="more-container" ref={toolsContainerRef}>
           <button
             ref={toolsTriggerRef}
@@ -186,115 +234,98 @@ export function StudioDocumentToolbar({
             <MoreHorizontal size={21} />
           </button>
           {showTools && (
-            <div
-              id="document-actions-menu"
-              className="tools-menu"
-              role="group"
-              aria-label="Document actions"
-              onKeyDown={(event) => {
-                const items = Array.from(
-                  event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                    "button",
-                  ),
-                );
-                if (!items.length) return;
-                const currentIdx = items.indexOf(
-                  document.activeElement as HTMLButtonElement,
-                );
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  items[
-                    (currentIdx + 1 + items.length) % items.length
-                  ]?.focus();
-                } else if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  items[
-                    (currentIdx - 1 + items.length) % items.length
-                  ]?.focus();
-                } else if (event.key === "Home") {
-                  event.preventDefault();
-                  items[0]?.focus();
-                } else if (event.key === "End") {
-                  event.preventDefault();
-                  items[items.length - 1]?.focus();
-                }
-              }}
-            >
-              <button
-                onClick={() => {
-                  onDuplicateResume();
-                  setShowTools(false);
+            <>
+              <div
+                className="menu-backdrop"
+                aria-hidden="true"
+                onClick={() => setShowTools(false)}
+              />
+              <div
+                id="document-actions-menu"
+                className="tools-menu"
+                role="group"
+                aria-label="Document actions"
+                onKeyDown={(event) => {
+                  const items = Array.from(
+                    event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                      "button",
+                    ),
+                  );
+                  if (!items.length) return;
+                  const currentIdx = items.indexOf(
+                    document.activeElement as HTMLButtonElement,
+                  );
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    items[
+                      (currentIdx + 1 + items.length) % items.length
+                    ]?.focus();
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    items[
+                      (currentIdx - 1 + items.length) % items.length
+                    ]?.focus();
+                  } else if (event.key === "Home") {
+                    event.preventDefault();
+                    items[0]?.focus();
+                  } else if (event.key === "End") {
+                    event.preventDefault();
+                    items[items.length - 1]?.focus();
+                  }
                 }}
               >
-                <Copy size={14} /> Duplicate resume
-              </button>
-              <button
-                onClick={() => {
-                  onTriggerResumeImport();
-                  setShowTools(false);
-                }}
-              >
-                <FileUp size={14} /> Import PDF or DOCX resume
-              </button>
-              <button
-                onClick={() => {
-                  onSaveToCareerLibrary();
-                  setShowTools(false);
-                }}
-              >
-                <BookMarked size={14} /> Save to Career Library
-              </button>
-              <button
-                onClick={() => {
-                  onExportBackup();
-                  setShowTools(false);
-                }}
-              >
-                <ArrowDownToLine size={14} /> Back up workspace
-              </button>
-              <button
-                onClick={() => {
-                  onTriggerBackupImport();
-                  setShowTools(false);
-                }}
-              >
-                <Upload size={14} /> Import JSON backup
-              </button>
-              <button
-                onClick={() => {
-                  onRequestDeleteResume();
-                  setShowTools(false);
-                }}
-              >
-                <Trash2 size={14} /> Delete resume
-              </button>
-            </div>
+                <button
+                  onClick={() => {
+                    onDuplicateResume();
+                    setShowTools(false);
+                  }}
+                >
+                  <Copy size={14} /> Duplicate resume
+                </button>
+                <button
+                  onClick={() => {
+                    onTriggerResumeImport();
+                    setShowTools(false);
+                  }}
+                >
+                  <FileUp size={14} /> Import PDF or DOCX resume
+                </button>
+                <button
+                  onClick={() => {
+                    onSaveToCareerLibrary();
+                    setShowTools(false);
+                  }}
+                >
+                  <BookMarked size={14} /> Save to Career Library
+                </button>
+                <button
+                  onClick={() => {
+                    onExportBackup();
+                    setShowTools(false);
+                  }}
+                >
+                  <ArrowDownToLine size={14} /> Back up workspace
+                </button>
+                <button
+                  onClick={() => {
+                    onTriggerBackupImport();
+                    setShowTools(false);
+                  }}
+                >
+                  <Upload size={14} /> Import JSON backup
+                </button>
+                <button
+                  onClick={() => {
+                    onRequestDeleteResume();
+                    setShowTools(false);
+                  }}
+                >
+                  <Trash2 size={14} /> Delete resume
+                </button>
+              </div>
+            </>
           )}
         </div>
-        <button
-          className="button secondary export-button"
-          disabled={allBusy}
-          onClick={onExportDocx}
-        >
-          {exporting === "docx" ? (
-            <LoaderCircle size={16} className="spin" />
-          ) : (
-            <FileSpreadsheet size={16} />
-          )}
-          {exporting === "docx" ? "Creating DOCX…" : "Export DOCX"}
-        </button>
-        <button
-          className="button primary export-button"
-          disabled={allBusy}
-          onClick={onExportPdf}
-        >
-          {exporting === "pdf" ? (
-            <LoaderCircle size={16} className="spin" />
-          ) : (
-            <ArrowDownToLine size={16} />
-          )}
-          {exporting === "pdf" ? "Creating PDF…" : "Export PDF"}
-        </button>
       </div>
     </div>
   );

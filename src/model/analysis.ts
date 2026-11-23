@@ -201,3 +201,63 @@ export function estimatePageCount(resume: Resume): {
     remainder === 0 ? 1 : Number((remainder / lineCapacityPerPage).toFixed(2));
   return { pages, fillRatioLastPage, lineCapacityPerPage, estimatedLines };
 }
+
+/**
+ * Validates and normalizes an external HTTP/HTTPS URL for safe linking in PDF,
+ * DOCX, and preview surfaces. Rejects unsafe schemes (`javascript:`, `data:`,
+ * `file:`, etc.), credentials, control characters, and plain email addresses.
+ */
+export function normalizeExternalUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 500) return null;
+  if (/[\u0000-\u0020\u007f]/.test(trimmed)) return null;
+
+  const firstSlash = trimmed.indexOf("/");
+  const firstColon = trimmed.indexOf(":");
+  const hasExplicitScheme =
+    firstColon > 0 && (firstSlash === -1 || firstColon < firstSlash);
+
+  if (hasExplicitScheme) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        return null;
+      }
+      if (!parsed.hostname || parsed.username || parsed.password) {
+        return null;
+      }
+      return parsed.href;
+    } catch {
+      return null;
+    }
+  }
+
+  if (trimmed.includes("@")) return null;
+  if (
+    !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?:[/?#].*)?$/i.test(
+      trimmed,
+    )
+  ) {
+    return null;
+  }
+  try {
+    const parsed = new URL(`https://${trimmed}`);
+    if (
+      !parsed.hostname.includes(".") ||
+      !/\.[a-z]{2,}$/i.test(parsed.hostname) ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+export function countPdfPages(bytes: Uint8Array): number {
+  const raw = new TextDecoder("latin1").decode(bytes);
+  const matches = raw.match(/\/Type\s*\/Page\b(?!s)/g);
+  return Math.max(1, matches ? matches.length : 1);
+}

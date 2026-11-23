@@ -89,6 +89,7 @@ export function ImportReviewDialog({
   providerReady,
   cleaningUp,
   onCleanUpWithAi,
+  onCancelAiCleanup,
   onCancel,
   onConfirm,
 }: {
@@ -97,6 +98,7 @@ export function ImportReviewDialog({
   providerReady: boolean;
   cleaningUp: boolean;
   onCleanUpWithAi: (consent: boolean) => void;
+  onCancelAiCleanup: () => void;
   onCancel: () => void;
   onConfirm: (title: string) => void;
 }) {
@@ -183,24 +185,35 @@ export function ImportReviewDialog({
               organize sections and bullets.
             </span>
           </label>
-          <button
-            type="button"
-            className="button secondary small"
-            disabled={!providerReady || !importConsent || cleaningUp}
-            onClick={() => {
-              onCleanUpWithAi(importConsent);
-              setImportConsent(false);
-            }}
-          >
-            {cleaningUp ? (
-              <LoaderCircle size={14} className="spin" />
-            ) : (
-              <Sparkles size={14} />
+          <div className="button-row">
+            <button
+              type="button"
+              className="button secondary small"
+              disabled={!providerReady || !importConsent || cleaningUp}
+              onClick={() => {
+                onCleanUpWithAi(importConsent);
+                setImportConsent(false);
+              }}
+            >
+              {cleaningUp ? (
+                <LoaderCircle size={14} className="spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+              {cleaningUp
+                ? "Organizing imported lines…"
+                : "Clean up structure with AI"}
+            </button>
+            {cleaningUp && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={onCancelAiCleanup}
+              >
+                Stop AI cleanup
+              </button>
             )}
-            {cleaningUp
-              ? "Organizing imported lines…"
-              : "Clean up structure with AI"}
-          </button>
+          </div>
           {!desktop && (
             <p className="fine-print">
               AI import cleanup is available in the desktop app.

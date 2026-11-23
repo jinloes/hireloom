@@ -9,6 +9,7 @@ import {
   applyProposal,
   applyRoleTailorProposal,
   buildTailoredResumeFromLibrary,
+  countPdfPages,
   createResume,
   defaultProposalSelection,
   documentFilename,
@@ -20,6 +21,7 @@ import {
   MAX_WORKSPACE_BYTES,
   mergeAiImportedStructure,
   normalizeAprAnswers,
+  normalizeExternalUrl,
   parseWorkspace,
   pullExperienceFromLibrary,
   restoreJobKeyword,
@@ -38,6 +40,7 @@ import {
   parseResumeLinesToDraft,
   redactImportLinesForAi,
 } from "./resumeImport";
+import { loadUiPreferences, saveUiPreferences } from "./uiPreferences";
 
 describe("workspace validation", () => {
   it("round trips a workspace and keeps empty resumes valid", () => {
@@ -688,5 +691,74 @@ describe("local feedback", () => {
     });
     expect(cherryPicked.experience).toHaveLength(1);
     expect(cherryPicked.experience[0].bullets).toEqual([libExp.bullets[1]]);
+  });
+
+  it("normalizes safe external URLs, counts PDF pages, persists UI prefs, and writes DOCX hyperlinks", async () => {
+    expect(normalizeExternalUrl("github.com/alex-morgan")).toBe(
+      "https://github.com/alex-morgan",
+    );
+    expect(normalizeExternalUrl("https://alexmorgan.design/work")).toBe(
+      "https://alexmorgan.design/work",
+    );
+    expect(normalizeExternalUrl("javascript:alert(1)")).toBeNull();
+    expect(normalizeExternalUrl("data:text/html,hello")).toBeNull();
+    expect(normalizeExternalUrl("mailto:alex@example.com")).toBeNull();
+    expect(normalizeExternalUrl("not a url")).toBeNull();
+
+    const fakePdf = new TextEncoder().encode(
+      "%PDF-1.7\n1 0 obj << /Type /Pages /Count 2 >> endobj\n2 0 obj << /Type /Page >> endobj\n3 0 obj << /Type /Page >> endobj",
+    );
+    expect(countPdfPages(fakePdf)).toBe(2);
+
+    window.localStorage.setItem(
+      "hireloom.ui-prefs.v1",
+      JSON.stringify({
+        theme: "dark",
+        editorWidthPct: 95,
+        previewZoom: 125,
+        sidebarCollapsed: true,
+        aiPromoDismissed: true,
+      }),
+    );
+    const clamped = loadUiPreferences();
+    expect(clamped).toEqual({
+      theme: "dark",
+      editorWidthPct: 58,
+      previewZoom: 125,
+      sidebarCollapsed: true,
+      aiPromoDismissed: true,
+    });
+    saveUiPreferences({ ...clamped, editorWidthPct: 10 });
+    expect(loadUiPreferences().editorWidthPct).toBe(28);
+
+    const resume = exampleResume();
+    resume.basics.website = "alexmorgan.design";
+    resume.basics.github = "javascript:alert(1)";
+    resume.projects = [
+      {
+        id: "proj-1",
+        name: "Hireloom",
+        subtitle: "Creator",
+        url: "https://github.com/jinloes/hireloom",
+        startDate: "2024-01",
+        endDate: "Present",
+        bullets: ["Built local-first studio."],
+      },
+    ];
+    resume.certifications = [
+      {
+        id: "cert-1",
+        name: "AWS Solutions Architect",
+        issuer: "Amazon",
+        date: "2024-06",
+        url: "aws.amazon.com/verification",
+      },
+    ];
+    const docxBytes = await createDocxBytes(resume);
+    const ascii = new TextDecoder("latin1").decode(docxBytes);
+    expect(ascii).toContain("word/_rels/document.xml.rels");
+    const lines = await extractDocxLines(docxBytes);
+    expect(lines.join("\n")).toContain("alexmorgan.design");
+    expect(lines.join("\n")).toContain("Hireloom");
   });
 });

@@ -19,9 +19,9 @@ setup/privacy behavior are affected.
   full checks.
 - **Privacy & AI safety:** Keep resume data local (no analytics, remote fonts,
   or automatic AI calls). Require explicit per-request consent, exclude contact
-  fields from prompts, treat user/job text as untrusted, never invent facts or
-  metrics, and keep the Copilot CLI subprocess isolated without tools, shell, or
-  project context.
+  fields from prompts, store cloud API keys only in the OS credential manager,
+  treat user/job text as untrusted, never invent facts or metrics, and keep the
+  Copilot CLI subprocess isolated without tools, shell, or project context.
 - **Contracts & storage:** Keep `src/model/` (`src/model.ts`) and
   `src-tauri/src/{contract,validation}.rs` aligned. Reject malformed/corrupt
   data visibly rather than replacing it with an empty workspace.

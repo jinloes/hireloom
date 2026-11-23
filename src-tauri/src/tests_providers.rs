@@ -333,3 +333,71 @@ fn import_cleanup_rejects_unredacted_emails_and_parses_structured_output() {
     assert_eq!(parsed.headline, "Staff Designer");
     assert_eq!(parsed.experience.len(), 1);
 }
+
+#[test]
+fn cancellation_aborts_stalled_http_and_cli_requests_immediately() {
+    use std::net::TcpListener;
+    use std::time::Instant;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stalled server");
+    let addr = listener.local_addr().expect("stalled addr");
+    let stalled_server = thread::spawn(move || {
+        let (_stream, _) = listener.accept().expect("accept stalled client");
+        thread::sleep(Duration::from_millis(600));
+    });
+
+    let cancel = AiCancelFlag::new();
+    let cancel_trigger = cancel.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(60));
+        cancel_trigger.cancel();
+    });
+
+    let started = Instant::now();
+    let endpoints = HttpEndpoints {
+        openai_base: format!("http://127.0.0.1:{}", addr.port()),
+        ..HttpEndpoints::default()
+    };
+    let result = run_http_provider_prompt_cancellable(
+        ProviderKind::Openai,
+        "gpt-4.1",
+        "prompt",
+        Some("sk-test"),
+        "http://127.0.0.1:11434/v1",
+        &endpoints,
+        Duration::from_secs(5),
+        MAX_GENERATION_OUTPUT_BYTES,
+        Some(&cancel),
+    );
+    assert_eq!(result, Err(AI_CANCELLED_MESSAGE.to_string()));
+    assert!(started.elapsed() < Duration::from_millis(500));
+    let _ = stalled_server.join();
+
+    let proc_cancel = AiCancelFlag::new();
+    let proc_trigger = proc_cancel.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(60));
+        proc_trigger.cancel();
+    });
+    let slow_cmd = if cfg!(windows) {
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 5"]);
+        cmd
+    } else {
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("5");
+        cmd
+    };
+    let proc_started = Instant::now();
+    let output = run_process_cancellable(
+        slow_cmd,
+        None,
+        Duration::from_secs(10),
+        4096,
+        Some(&proc_cancel),
+    )
+    .expect("run cancellable process");
+    assert!(output.cancelled);
+    assert!(!output.timed_out);
+    assert!(proc_started.elapsed() < Duration::from_secs(2));
+}

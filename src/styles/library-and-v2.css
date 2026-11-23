@@ -622,9 +622,10 @@
 .proposal-item-header h3 {
   margin: 0;
 }
+.proposal-card ul.proposal-diff-list,
 .proposal-diff-list {
   list-style: none;
-  padding: 0 !important;
+  padding: 0;
   margin: 6px 0 0;
   display: grid;
   gap: 8px;
@@ -659,15 +660,15 @@
   color: #6b7665;
 }
 .diff-added {
-  background: #e3f2d3;
-  color: #264a1c;
+  background: var(--diff-add-bg);
+  color: var(--diff-add-fg);
   text-decoration: none;
   padding: 0 2px;
   border-radius: 2px;
 }
 .diff-removed {
-  background: #fbe4dc;
-  color: #8c3d27;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
   text-decoration: line-through;
   padding: 0 2px;
   border-radius: 2px;

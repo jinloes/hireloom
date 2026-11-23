@@ -18,9 +18,10 @@ resume builders (such as Rezi) on structured authoring, role tailoring,
 ATS-friendly formatting, and actionable resume feedback—without cloud lock-in,
 mandatory accounts, watermarks, usage telemetry, or AI-invented claims.
 
-Users own their career data locally, bring their existing GitHub Copilot
-entitlement when they want writing assistance, and export clean, single-column
-PDF and Word (`.docx`) resumes.
+Users own their career data locally, connect GitHub Copilot CLI, cloud APIs
+(OpenAI, Anthropic, Google Gemini via OS keychain), or local Ollama models when
+they want writing assistance, and export clean, single-column PDF and Word
+(`.docx`) resumes with live clickable links.
 
 ## Target personas
 
@@ -79,39 +80,44 @@ workspace's **Master Career Library**, which detects drift on linked resume
 items (Update library / Pull library) and builds tailored resume variants by
 cherry-picking relevant entries for a target role.
 
-### 3. Role-specific keyword triage and Copilot refinement
+### 3. Role-specific keyword triage and Tailor & Coach workflows
 
-When a user pastes a job description, Hireloom extracts curated and dynamic
-role terms locally and separates **Matched**, **Missing**, and **Skipped**
-keywords. Users can add skills they genuinely possess, skip terms outside their
-background, or restore skipped terms. In the desktop app, users can explicitly
-consent to whole-resume tailoring (with selective word-diff review) or launch
-APR analysis and Q&A refinement directly from any experience or project bullet.
+When a user pastes a job description in **Tailor & Coach**, Hireloom extracts
+curated and dynamic role terms locally and separates **Matched**, **Missing**,
+and **Skipped** keywords. Users can add skills they genuinely possess, skip
+terms outside their background, jump straight to coaching a missing keyword, or
+restore skipped terms. Focused sub-views separate **Role Tailoring** (whole
+resume, 3 summary angles, or single-role tailoring with optional 2-model
+grounding badges), **APR Bullet Coach** (rubric review + Q&A refinement), and
+**Provider Setup** (Copilot CLI, OpenAI, Anthropic, Gemini, or local Ollama),
+with instant in-flight request cancellation.
 
-### 4. Page fitting, quality checks, and export
+### 4. Page proofing, variant comparison, quality checks, and export
 
 Users switch between **Editorial** (serif display) and **Modern** (sans-serif)
 templates, three accent colors, **A4** or **US Letter** paper, **Compact /
-Standard / Spacious** spacing density, and custom **Section order**. The live
-preview displays advisory page-break lines and page-count estimates, the bottom
-bar surfaces essentials and expandable **Quality checks**, and users export
-single-column **PDF** or **Word (`.docx`)** files plus Workspace v2 JSON
-backups.
+Standard / Spacious** spacing density, and custom **Section order**. The right
+pane switches between the **Live sheet** (advisory page-break lines and
+clickable links), **PDF proof** (exact on-demand rendered PDF pagination and
+page count), and **Compare** (word-level diffs against the Master Career Library
+or another resume variant). The bottom bar surfaces essentials and expandable
+**Quality checks**, and users export single-column **PDF** or **Word (`.docx`)**
+files plus Workspace v2 JSON backups.
 
 ## Shipped capability map
 
-| Capability area         | User-visible behavior                                                                                         | Environment       |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------- |
-| Workspace & backups     | Up to 50 resumes, rename/duplicate/delete, atomic autosave, recovery backup, v2 JSON export, v1/v2 import     | Desktop & browser |
-| Resume import           | Local `.pdf` and `.docx` text extraction (≤ 5 MB) into a review dialog before adding to workspace             | Desktop & browser |
-| Resume sections         | Basics, Summary, Experience, Projects, Education, Certifications, Categorized & flat Skills, Custom sections  | Desktop & browser |
-| Master Career Library   | Canonical item library, linked-entry drift detection, push/pull sync, and cherry-picked variant builder       | Desktop & browser |
-| Layout & pagination     | Editorial/Modern templates, 3 accents, A4 & US Letter, Compact/Standard/Spacious density, section reordering  | Desktop & browser |
-| Studio ergonomics       | `100dvh` split-pane shell, draggable divider, light/dark chrome, preview zoom, click-to-jump, multi-step undo | Desktop & browser |
-| Live preview & exports  | Advisory page-break markers, selectable single-column PDF (bundled Noto fonts) and OpenXML Word (`.docx`)     | Desktop & browser |
-| Keyword targeting       | Curated + dynamic JD term extraction with Matched, Add skill, Skip, and Restore triage                        | Desktop & browser |
-| Quality diagnostics     | Essentials bar + expandable deterministic checks (Completeness, Impact & Verbs, Formatting, Role Alignment)   | Desktop & browser |
-| Copilot tailoring & APR | Isolated CLI (`claude-sonnet-5.5`), per-request consent, selective word-diff proposals, APR + Q&A refinement  | Desktop only      |
+| Capability area         | User-visible behavior                                                                                                    | Environment       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| Workspace & backups     | Up to 50 resumes, rename/duplicate/delete, atomic autosave, recovery backup, v2 JSON export, v1/v2 import                | Desktop & browser |
+| Resume import           | Local `.pdf` and `.docx` text extraction (≤ 5 MB) into a review dialog (+ optional consented desktop AI cleanup)         | Desktop & browser |
+| Resume sections         | Basics, Summary, Experience, Projects, Education, Certifications, Categorized & flat Skills, Custom sections             | Desktop & browser |
+| Master Career Library   | Canonical item library, linked-entry drift detection, push/pull sync, cherry-picked variant builder, and variant diffing | Desktop & browser |
+| Layout & pagination     | Editorial/Modern templates, 3 accents, A4 & US Letter, Compact/Standard/Spacious density, section reordering             | Desktop & browser |
+| Studio ergonomics       | Full-height split-pane shell, collapsible sidebar (`Ctrl/Cmd+\`), persisted theme/zoom/divider prefs, multi-step undo    | Desktop & browser |
+| Preview, proof & export | Live sheet, exact on-demand PDF page proof, variant Compare view, clickable links in single-column PDF and `.docx`       | Desktop & browser |
+| Keyword targeting       | Curated + dynamic JD term extraction with Matched, Add skill, Coach APR, Skip, and Restore triage                        | Desktop & browser |
+| Quality diagnostics     | Essentials bar + expandable deterministic checks (Completeness, Impact & Verbs, Formatting, Role Alignment)              | Desktop & browser |
+| Tailor & Coach AI       | Copilot CLI, OpenAI, Anthropic, Gemini, or Ollama; OS keyring keys; 2-model grounding; cancellable APR & role tailoring  | Desktop only      |
 
 ## Explicit non-goals and current boundaries
 

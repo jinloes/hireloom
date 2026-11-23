@@ -7,26 +7,28 @@ two environments:
 - an explicitly labeled browser preview backed by browser-local storage.
 
 The environments share the UI and domain model but intentionally do not share
-storage. Only the desktop application can connect to GitHub Copilot.
+storage. Only the desktop application can connect to AI providers (isolated
+GitHub Copilot CLI, OpenAI, Anthropic, Google Gemini, or local
+OpenAI-compatible / Ollama endpoints).
 
 ## System context
 
 ```text
                          explicit reviewed request
                                     |
-+-------------------+       +-------v--------+       +--------------------+
-| React application | IPC   | Tauri/Rust     | spawn | GitHub Copilot CLI |
-| editor + preview  +------>+ command layer  +------>+ isolated profile   |
-+---------+---------+       +---+---------+--+       +--------------------+
++-------------------+       +-------v--------+       +-------------------------------+
+| React application | IPC   | Tauri/Rust     | ----> | Isolated Copilot CLI OR       |
+| editor + preview  +------>+ command layer  |       | OS-keyring HTTP AI / Ollama   |
++---------+---------+       +---+---------+--+       +-------------------------------+
           |                     |         |
           | browser preview     |         | save dialog
           v                     v         v
    localStorage only       workspace.json PDF/DOCX/JSON export
 ```
 
-The React application never receives filesystem paths, Copilot credentials, or
-direct process access. Rust exposes a small command surface and validates data
-again at the native boundary.
+The React application never receives filesystem paths, OS keyring API keys,
+Copilot credentials, or direct process/network access. Rust exposes a small
+command surface and validates data again at the native boundary.
 
 ## Layers and ownership
 
@@ -56,16 +58,18 @@ them with a picker value.
 ### Application orchestration
 
 `src/App.tsx` composes top-level UI state with focused hooks
-(`src/hooks/useStudioAiWorkflows.ts` and `src/hooks/useResumeDocumentIo.ts`) and
-studio shell subcomponents (`src/components/studio/*`): document management,
-Master Career Library sync and tailored variant creation, JSON backup
-import/export, local PDF/DOCX resume import review, PDF and DOCX generation,
-local quality audit display, bounded per-resume undo/redo history, studio theme
-and split-pane/zoom ergonomics, AI status/login/generation, selective proposal
-review, transient APR answers/refinement, and stale-result checks. Production
-`.ts`, `.tsx`, `.rs`, and `.css` modules are organized around cohesive domain
-boundaries—aiming for ~20 KB as a pragmatic guideline rather than a rigid cap—so
-single file reads typically capture complete module context.
+(`src/hooks/useStudioAiWorkflows.ts` and `src/hooks/useResumeDocumentIo.ts`),
+local UI preferences (`src/uiPreferences.ts`), and studio shell subcomponents
+(`src/components/studio/*`): document management, Master Career Library sync
+and tailored variant creation, JSON backup import/export, local PDF/DOCX resume
+import review, PDF and DOCX generation, local quality audit display, bounded
+per-resume undo/redo history, persisted studio theme/split-pane/zoom/sidebar
+ergonomics (`Cmd/Ctrl+\` collapsible rail and full-height studio chrome), AI
+provider setup, cancellable AI generation, selective proposal review, transient
+APR answers/refinement, and stale-result checks. Production `.ts`, `.tsx`,
+`.rs`, and `.css` modules are organized around cohesive domain boundaries—aiming
+for ~20 KB as a pragmatic guideline rather than a rigid cap—so single file reads
+typically capture complete module context.
 
 Focused components remain controlled by `App`:
 
@@ -75,12 +79,16 @@ Focused components remain controlled by `App`:
   items and builds tailored variants.
 - `StylePanel` emits template, accent, page-size (`a4` / `letter`), density
   (`compact` / `standard` / `spacious`), and `sectionOrder` changes.
-- `CopilotPanel` (and `src/components/copilot/*`) renders consent, provider
-  settings, dynamic keyword triage, word-level diffs, per-item proposal
-  selection, and APR controls without calling native APIs itself.
-- `ResumePreview` renders the live screen representation with estimated
-  page-break indicators.
-- `ResumeDocument` is dynamically imported only for PDF export.
+- `CopilotPanel` (`Tailor & Coach`, with `src/components/copilot/*`) organizes
+  `Role Tailoring`, `APR Bullet Coach`, and `Provider Setup` sub-views without
+  calling native APIs itself.
+- `StudioPreviewPane` switches between the live `ResumePreview` sheet (with
+  advisory page-break markers and clickable external links), on-demand `PDF
+proof` (exact `@react-pdf/renderer` pagination and page count), and `Compare`
+  (`VariantCompareView`, word-level diffs against the Master Career Library or
+  another resume variant).
+- `ResumeDocument` is dynamically imported only for PDF export and on-demand PDF
+  page proofing.
 - `docxExport` (`src/docx/*`) and `resumeImport` (`src/import/*`) are
   dynamically imported only for DOCX export and PDF/DOCX import.
 
@@ -103,23 +111,35 @@ validates and writes through a same-directory temporary file, syncs it, and
 atomically replaces the destination. On Unix, app data directories and files
 are restricted to the current user.
 
-The browser preview uses only `hireloom.workspace.v1` in `localStorage`.
+The browser preview uses `hireloom.workspace.v1` in `localStorage` for resume
+data; non-sensitive studio layout preferences (`theme`, `editorWidthPct`,
+`previewZoom`, `sidebarCollapsed`, `aiPromoDismissed`) use `hireloom.ui-prefs.v1`.
+`useWorkspace` caches baseline serialized snapshots by object identity so UI
+renders never re-serialize the workspace on every keystroke.
 
 ### Platform adapter and IPC
 
 `src/platform.ts` is the only frontend module that chooses between Tauri and
 browser behavior. Its desktop methods invoke:
 
-| Command                  | Direction     | Result                                         |
-| ------------------------ | ------------- | ---------------------------------------------- |
-| `load_workspace`         | Rust to React | Validated workspace or no saved file           |
-| `save_workspace`         | React to Rust | Atomically persisted workspace                 |
-| `export_document`        | React to Rust | User-selected PDF/DOCX/JSON save result        |
-| `copilot_status`         | React to Rust | Local CLI availability and version detail      |
-| `copilot_login`          | React to Rust | App-specific web login completion              |
-| `generate_resume`        | React to Rust | Validated, non-applied AI proposal             |
-| `analyze_accomplishment` | React to Rust | Validated, transient APR review for one bullet |
-| `refine_accomplishment`  | React to Rust | Validated, transient answer-bound rewrite      |
+| Command                    | Direction     | Result                                                          |
+| -------------------------- | ------------- | --------------------------------------------------------------- |
+| `load_workspace`           | Rust to React | Validated workspace or no saved file                            |
+| `save_workspace`           | React to Rust | Atomically persisted workspace                                  |
+| `export_document`          | React to Rust | User-selected PDF/DOCX/JSON save result                         |
+| `copilot_status`           | React to Rust | Local CLI availability and version detail                       |
+| `ai_provider_status`       | React to Rust | Active AI settings, CLI status, and keyring readiness           |
+| `save_ai_settings`         | React to Rust | Validated provider/model/verifier settings (`ai-settings.json`) |
+| `set_provider_api_key`     | React to Rust | API key stored in OS credential manager (`keyring`)             |
+| `clear_provider_api_key`   | React to Rust | API key removed from OS credential manager                      |
+| `copilot_login`            | React to Rust | App-specific Copilot web login completion                       |
+| `cancel_ai_request`        | React to Rust | Immediate cancellation of in-flight CLI or HTTP AI work         |
+| `generate_resume`          | React to Rust | Validated whole-resume proposal (+ optional grounding)          |
+| `generate_summary_options` | React to Rust | Validated 3-angle summary proposal                              |
+| `tailor_experience_role`   | React to Rust | Validated single-role/project bullet proposal                   |
+| `analyze_accomplishment`   | React to Rust | Validated, transient APR review for one bullet                  |
+| `refine_accomplishment`    | React to Rust | Validated, transient answer-bound rewrite                       |
+| `assist_resume_import`     | React to Rust | Consented, PII-redacted import section structure assist         |
 
 Browser implementations provide local storage and browser downloads. AI methods
 reject browser calls.
@@ -127,46 +147,61 @@ reject browser calls.
 ### PDF and DOCX generation, and local resume import
 
 `ResumeDocument.tsx` uses `@react-pdf/renderer` and bundled Noto fonts. The PDF
-path is local, produces selectable text, uses a single-column A4 or US Letter
-layout with Compact/Standard/Spacious density presets, and allows content to
-wrap across pages. `ResumePreview.tsx` measures rendered page height to display
-advisory page-break lines, while the exported PDF remains authoritative.
+path is local, produces selectable text with normalized external `http(s)`
+hyperlinks (`basics.website`, `basics.github`, `project.url`,
+`certification.url`), uses a single-column A4 or US Letter layout with
+Compact/Standard/Spacious density presets, and allows content to wrap across
+pages. `ResumePreview.tsx` measures rendered page height to display advisory
+page-break lines, while `StudioPreviewPane.tsx` offers an on-demand `PDF proof`
+mode that renders the exact PDF blob in-studio and counts real `/Type /Page`
+objects (`countPdfPages`).
 
 `src/docxExport.ts` locally builds a single-column OpenXML `.docx` ZIP archive
-honoring section order, categorized skills, template font pairings, A4/US Letter
+honoring section order, categorized skills, external `w:hyperlink` relationships
+(`word/_rels/document.xml.rels`), template font pairings, A4/US Letter
 dimensions, and density margins without external network requests.
 
 `src/resumeImport.ts` locally extracts selectable text from user-chosen `.pdf`
 (using `pdfjs-dist` with a bundled `'self'` worker) and `.docx` (bounded ZIP
 inflation + XML parsing) files up to 5 MB, mapping detected sections into a
-validated `Resume` draft presented in a review dialog before adding to the
-workspace.
+validated `Resume` draft presented in a review dialog (with optional,
+explicitly consented PII-redacted AI section cleanup on desktop) before adding
+to the workspace.
 
-### Copilot boundary
+### AI and provider boundary
 
 AI is an opt-in editing aid, not an autonomous actor:
 
-1. The UI requires consent for each generation and clears it afterward.
-2. Rust validates the resume before constructing a prompt.
+1. The UI requires consent for each generation and clears it afterward. Active
+   requests can be cancelled immediately via `cancel_ai_request` (`AiCancelFlag`)
+   without blocking document navigation or tab switching.
+2. Rust validates the resume or import lines before constructing a prompt.
 3. Dedicated name, email, phone, location, website, GitHub, project/certification
    URLs, and resume title fields are omitted from prompt data.
 4. The prompt labels all resume/job text as untrusted and forbids following
    embedded instructions or inventing facts.
-5. Rust starts the CLI directly without a shell in a neutral app-owned working
-   directory. It preserves the real OS home so the CLI can reach the system
-   credential store, while `COPILOT_HOME`, `GH_CONFIG_DIR`, XDG paths, cache, and
-   temporary storage remain app-owned.
-6. Whole-resume and APR requests explicitly use `claude-sonnet-5.5` with
-   task-calibrated `--reasoning-effort` (`medium` for APR rubric analysis; `low`
-   for answer-guided refinement and whole-resume proposals); unavailable model
-   access is surfaced as a request failure with no fallback.
-7. The app reads the CLI-owned JSON-with-comments configuration, preserves its
+5. Desktop users can select GitHub Copilot CLI, OpenAI, Anthropic, Google
+   Gemini, or a local OpenAI-compatible/Ollama endpoint (`ai-settings.json`).
+   Cloud API keys are stored only in the OS credential store (`keyring`) or read
+   from standard environment variables—never persisted in `workspace.json` or
+   exposed to the webview. Optional 2-model factual verification runs a second
+   configured model over proposed bullets/summaries to label items `Supported`,
+   `Inferred`, or `Unsupported`.
+6. For GitHub Copilot CLI, Rust starts the CLI directly without a shell in a
+   neutral app-owned working directory. It preserves the real OS home so the CLI
+   can reach the system credential store, while `COPILOT_HOME`, `GH_CONFIG_DIR`,
+   XDG paths, cache, and temporary storage remain app-owned.
+7. Copilot CLI requests use the selected model (defaulting to `claude-sonnet-5.5`)
+   with task-calibrated `--reasoning-effort` (`medium` for APR rubric analysis;
+   `low` for answer-guided refinement and proposals); unavailable model access
+   is surfaced as a request failure with no silent fallback.
+8. The app reads the CLI-owned JSON-with-comments configuration, preserves its
    existing settings, and atomically writes strict JSON with Hireloom's
    isolation controls enforced.
-8. Hooks, memory, IDE auto-connect, tools, built-in MCPs, custom instructions,
-   remote features, and auto-update are disabled.
-9. Environment inheritance is allowlisted; process duration and output size are
-   capped.
+9. Hooks, memory, IDE auto-connect, tools, built-in MCPs, custom instructions,
+   remote features, and auto-update are disabled for the CLI; HTTP provider
+   calls use a shared bounded client with validated HTTPS (or loopback HTTP for
+   Ollama) endpoints, response-byte caps, and cancellation polling.
 10. CLI output uses JSON events, and Rust extracts only the final assistant text
     before applying the feature-specific response schema. This avoids the
     plain-text renderer changing JSON escape sequences.

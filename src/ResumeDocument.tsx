@@ -1,6 +1,7 @@
 import {
   Document,
   Font,
+  Link,
   Page,
   StyleSheet,
   Text,
@@ -10,6 +11,7 @@ import {
 import {
   accents,
   formatYearMonth,
+  normalizeExternalUrl,
   type Density,
   type Resume,
   type SectionKey,
@@ -83,6 +85,7 @@ const styles = StyleSheet.create({
   name: { fontWeight: 700, lineHeight: 1.2 },
   headline: { marginTop: 3 },
   contact: { marginTop: 5, color: "#57605e" },
+  inlineLink: { color: "#57605e", textDecoration: "underline" },
   sectionTitle: { fontWeight: 700 },
   entryHeading: {
     flexDirection: "row",
@@ -123,6 +126,30 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
       marginBottom: metrics.sectionBottom,
     },
   ];
+
+  const renderInlineMetadata = (
+    items: { text: string; link?: boolean }[],
+    separator: string,
+  ) => {
+    const visible = items
+      .map((item) => ({ text: item.text.trim(), link: item.link }))
+      .filter((item) => item.text.length > 0);
+    return visible.map((item, index) => {
+      const href = item.link ? normalizeExternalUrl(item.text) : null;
+      return (
+        <Text key={`${index}-${item.text}`}>
+          {index > 0 ? separator : ""}
+          {href ? (
+            <Link src={href} style={styles.inlineLink}>
+              {item.text}
+            </Link>
+          ) : (
+            item.text
+          )}
+        </Text>
+      );
+    });
+  };
 
   const renderSection = (key: SectionKey) => {
     switch (key) {
@@ -201,9 +228,13 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
                 </View>
                 {(project.subtitle.trim() || project.url.trim()) && (
                   <Text style={styles.company} minPresenceAhead={20}>
-                    {[project.subtitle, project.url]
-                      .filter((item) => item.trim())
-                      .join(" · ")}
+                    {renderInlineMetadata(
+                      [
+                        { text: project.subtitle },
+                        { text: project.url, link: true },
+                      ],
+                      " · ",
+                    )}
                   </Text>
                 )}
                 {project.bullets
@@ -267,9 +298,10 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
                 </View>
                 {(cert.issuer.trim() || cert.url.trim()) && (
                   <Text style={styles.company}>
-                    {[cert.issuer, cert.url]
-                      .filter((item) => item.trim())
-                      .join(" · ")}
+                    {renderInlineMetadata(
+                      [{ text: cert.issuer }, { text: cert.url, link: true }],
+                      " · ",
+                    )}
                   </Text>
                 )}
               </View>
@@ -401,15 +433,16 @@ export function ResumeDocument({ resume }: { resume: Resume }) {
             </Text>
           )}
           <Text style={[styles.contact, { fontSize: metrics.smallSize }]}>
-            {[
-              resume.basics.email,
-              resume.basics.phone,
-              resume.basics.location,
-              resume.basics.website,
-              resume.basics.github,
-            ]
-              .filter(Boolean)
-              .join("  ·  ")}
+            {renderInlineMetadata(
+              [
+                { text: resume.basics.email },
+                { text: resume.basics.phone },
+                { text: resume.basics.location },
+                { text: resume.basics.website, link: true },
+                { text: resume.basics.github, link: true },
+              ],
+              "  ·  ",
+            )}
           </Text>
         </View>
         {resume.sectionOrder.map((key) => renderSection(key))}

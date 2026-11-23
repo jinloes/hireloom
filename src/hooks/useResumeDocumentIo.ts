@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   documentFilename,
   MAX_WORKSPACE_BYTES,
@@ -7,7 +7,13 @@ import {
   type Resume,
   type Workspace,
 } from "../model";
-import { desktop, exportDocument, structureImportedResume } from "../platform";
+import {
+  cancelAiRequest,
+  desktop,
+  exportDocument,
+  isAiCancelledError,
+  structureImportedResume,
+} from "../platform";
 import type { ImportedResumeDraft } from "../resumeImport";
 import type { AiBusyKind } from "../components/CopilotPanel";
 import type { StudioNotice } from "./useStudioAiWorkflows";
@@ -35,6 +41,7 @@ export function useResumeDocumentIo({
   setNotice: (notice: StudioNotice | null) => void;
   report: (error: unknown) => void;
 }) {
+  const importCleanupSeq = useRef(0);
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const [importingFile, setImportingFile] = useState(false);
   const [importDraft, setImportDraft] = useState<ImportedResumeDraft | null>(
@@ -178,13 +185,26 @@ export function useResumeDocumentIo({
     }
   }
 
+  async function cancelImportCleanup() {
+    importCleanupSeq.current += 1;
+    setAiBusy(null);
+    await cancelAiRequest();
+    setNotice({
+      kind: "success",
+      text: "AI import cleanup cancelled. Your locally parsed draft is unchanged.",
+    });
+  }
+
   async function cleanUpImportWithAi(importConsent: boolean) {
     if (!importDraft) return;
+    importCleanupSeq.current += 1;
+    const seq = importCleanupSeq.current;
     setAiBusy("importCleanup");
     try {
       const { redactImportLinesForAi } = await import("../resumeImport");
       const redacted = redactImportLinesForAi(importDraft.rawLines);
       const structured = await structureImportedResume(redacted, importConsent);
+      if (importCleanupSeq.current !== seq) return;
       const merged = mergeAiImportedStructure(importDraft.resume, structured);
       setImportDraft({
         ...importDraft,
@@ -207,9 +227,17 @@ export function useResumeDocumentIo({
         },
       });
     } catch (error) {
-      report(error);
+      if (importCleanupSeq.current !== seq) return;
+      if (isAiCancelledError(error)) {
+        setNotice({
+          kind: "success",
+          text: "AI import cleanup cancelled. Your locally parsed draft is unchanged.",
+        });
+      } else {
+        report(error);
+      }
     } finally {
-      setAiBusy(null);
+      if (importCleanupSeq.current === seq) setAiBusy(null);
     }
   }
 
@@ -240,6 +268,7 @@ export function useResumeDocumentIo({
     importBackup,
     importResumeDocument,
     cleanUpImportWithAi,
+    cancelImportCleanup,
     confirmImportedResume,
   };
 }

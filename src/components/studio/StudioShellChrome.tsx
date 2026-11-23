@@ -5,22 +5,25 @@ import {
   ChevronRight,
   FileText,
   FolderOpen,
-  Github,
   LoaderCircle,
   LockKeyhole,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Sun,
   X,
 } from "lucide-react";
 import type { Resume, Workspace } from "../../model";
 import { desktop } from "../../platform";
 import type { StudioNotice } from "../../hooks/useStudioAiWorkflows";
+import type { StudioTheme } from "../../uiPreferences";
 
 export type WorkspaceView = "studio" | "resumes" | "careerLibrary";
-export type StudioTheme = "light" | "dark";
+export type { StudioTheme };
 
 export function LoadingScreen({
   loadError,
@@ -60,113 +63,171 @@ export function StudioSidebar({
   view,
   careerLibraryCount,
   allBusy,
-  blocked,
+  collapsed,
+  aiPromoDismissed,
   onSetView,
   onAddResume,
   onSelectResume,
   onOpenCopilotTab,
+  onToggleCollapsed,
+  onDismissAiPromo,
 }: {
   workspace: Workspace;
   resume: Resume;
   view: WorkspaceView;
   careerLibraryCount: number;
   allBusy: boolean;
-  blocked: boolean;
+  collapsed: boolean;
+  aiPromoDismissed: boolean;
   onSetView: (view: WorkspaceView) => void;
   onAddResume: () => void;
   onSelectResume: (id: string) => void;
   onOpenCopilotTab: () => void;
+  onToggleCollapsed: () => void;
+  onDismissAiPromo: () => void;
 }) {
   return (
-    <aside className="sidebar" aria-label="Workspace navigation">
-      <a
-        className="brand"
-        href="#"
-        onClick={(event) => {
-          event.preventDefault();
-          onSetView("studio");
-        }}
-      >
-        <img src="/hireloom.svg" alt="" />
-        <span>
-          hireloom<span className="brand-period">.</span>
-        </span>
-      </a>
-      <p className="brand-caption">YOUR NEXT CHAPTER</p>
+    <aside
+      className={`sidebar ${collapsed ? "sidebar--collapsed" : ""}`}
+      aria-label="Workspace navigation"
+    >
+      <div className="sidebar-brand-row">
+        <a
+          className="brand"
+          href="#"
+          title="Resume studio"
+          onClick={(event) => {
+            event.preventDefault();
+            onSetView("studio");
+          }}
+        >
+          <img src="/hireloom.svg" alt="" />
+          <span className="sidebar-text">
+            hireloom<span className="brand-period">.</span>
+          </span>
+        </a>
+        <button
+          type="button"
+          className="icon-button sidebar-collapse-btn"
+          aria-label={
+            collapsed
+              ? "Expand workspace sidebar"
+              : "Collapse workspace sidebar"
+          }
+          aria-expanded={!collapsed}
+          title={
+            collapsed
+              ? "Expand sidebar (Ctrl+\\)"
+              : "Collapse sidebar (Ctrl+\\)"
+          }
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? (
+            <PanelLeftOpen size={15} />
+          ) : (
+            <PanelLeftClose size={15} />
+          )}
+        </button>
+      </div>
+      <p className="brand-caption sidebar-text">YOUR NEXT CHAPTER</p>
       <button
         className="button primary new-resume"
         disabled={allBusy}
+        title="New resume"
         onClick={onAddResume}
       >
-        <Plus size={17} /> New resume
+        <Plus size={17} /> <span className="sidebar-text">New resume</span>
       </button>
-      <span className="nav-label">WORKSPACE</span>
+      <span className="nav-label sidebar-text">WORKSPACE</span>
       <nav>
         <button
           className={`nav-item ${view === "studio" ? "active" : ""}`}
-          disabled={blocked}
+          title="Resume studio"
           onClick={() => onSetView("studio")}
         >
-          <FileText size={18} /> Resume studio <ChevronRight size={14} />
+          <FileText size={18} />{" "}
+          <span className="sidebar-text">Resume studio</span>{" "}
+          <ChevronRight size={14} className="sidebar-text" />
         </button>
         <button
           className={`nav-item ${view === "resumes" ? "active" : ""}`}
-          disabled={blocked}
+          title="My resumes"
           onClick={() => onSetView("resumes")}
         >
-          <FolderOpen size={18} /> My resumes{" "}
-          <span className="count">{workspace.resumes.length}</span>
+          <FolderOpen size={18} />{" "}
+          <span className="sidebar-text">My resumes</span>{" "}
+          <span className="count sidebar-text">{workspace.resumes.length}</span>
         </button>
         <button
           className={`nav-item ${view === "careerLibrary" ? "active" : ""}`}
-          disabled={blocked}
+          title="Career library"
           onClick={() => onSetView("careerLibrary")}
         >
-          <BookMarked size={18} /> Career library{" "}
-          <span className="count">{careerLibraryCount}</span>
+          <BookMarked size={18} />{" "}
+          <span className="sidebar-text">Career library</span>{" "}
+          <span className="count sidebar-text">{careerLibraryCount}</span>
         </button>
       </nav>
-      <div className="sidebar-resumes">
-        <span className="nav-label">YOUR DOCUMENTS</span>
-        {workspace.resumes
-          .slice(-5)
-          .reverse()
-          .map((item) => (
-            <button
-              key={item.id}
-              disabled={blocked}
-              className={`resume-link ${item.id === resume.id ? "selected" : ""}`}
-              onClick={() => onSelectResume(item.id)}
-            >
-              <span className="document-dot" />
-              <span>{item.title}</span>
-            </button>
-          ))}
-      </div>
+      {!collapsed && (
+        <div className="sidebar-resumes">
+          <span className="nav-label">YOUR DOCUMENTS</span>
+          {workspace.resumes
+            .slice(-5)
+            .reverse()
+            .map((item) => (
+              <button
+                key={item.id}
+                disabled={allBusy}
+                className={`resume-link ${item.id === resume.id ? "selected" : ""}`}
+                onClick={() => onSelectResume(item.id)}
+              >
+                <span className="document-dot" />
+                <span>{item.title}</span>
+              </button>
+            ))}
+        </div>
+      )}
       <div className="sidebar-bottom">
-        {desktop ? (
+        {desktop && !aiPromoDismissed && !collapsed ? (
           <div className="copilot-promo">
             <div className="promo-top">
-              <Github size={20} />
-              <span className="tiny-badge">YOUR AI CO-PILOT</span>
+              <Sparkles size={18} />
+              <span className="tiny-badge">TAILOR &amp; COACH</span>
+              <button
+                type="button"
+                className="promo-dismiss-btn"
+                aria-label="Dismiss AI studio card"
+                onClick={onDismissAiPromo}
+              >
+                <X size={13} />
+              </button>
             </div>
             <h3>A stronger story. Still entirely yours.</h3>
-            <button disabled={blocked} onClick={onOpenCopilotTab}>
-              Meet your writing partner <ArrowUpRight size={15} />
+            <button onClick={onOpenCopilotTab}>
+              Open Tailor &amp; Coach <ArrowUpRight size={15} />
             </button>
           </div>
         ) : null}
-        <div className="local-status">
+        <div
+          className="local-status"
+          title={
+            desktop
+              ? "Local-first. Yours to keep."
+              : "Browser preview · local storage"
+          }
+        >
           <LockKeyhole size={14} />
-          <span>
+          <span className="sidebar-text">
             {desktop
               ? "Local-first. Yours to keep."
               : "Browser preview · local storage"}
           </span>
         </div>
-        <p className="sidebar-version">
-          HIRELOOM <span>v0.2</span>
-        </p>
+        {!collapsed && (
+          <p className="sidebar-version">
+            HIRELOOM <span>v0.2</span>
+          </p>
+        )}
       </div>
     </aside>
   );

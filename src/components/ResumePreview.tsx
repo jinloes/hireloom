@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   accents,
   estimatePageCount,
   formatYearMonth,
+  normalizeExternalUrl,
   type Resume,
   type SectionKey,
 } from "../model";
@@ -69,13 +70,43 @@ export function ResumePreview({
     return () => observer.disconnect();
   }, [resume, aspectRatio]);
 
-  const contact = [
-    resume.basics.email,
-    resume.basics.phone,
-    resume.basics.location,
-    resume.basics.website,
-    resume.basics.github,
-  ].filter(Boolean);
+  const contactItems = [
+    { text: resume.basics.email },
+    { text: resume.basics.phone },
+    { text: resume.basics.location },
+    { text: resume.basics.website, link: true },
+    { text: resume.basics.github, link: true },
+  ].filter((item) => item.text.trim().length > 0);
+
+  const renderInlineMetadata = (
+    items: { text: string; link?: boolean }[],
+    separator: string,
+  ) => {
+    const visible = items
+      .map((item) => ({ text: item.text.trim(), link: item.link }))
+      .filter((item) => item.text.length > 0);
+    return visible.map((item, index) => {
+      const href = item.link ? normalizeExternalUrl(item.text) : null;
+      return (
+        <Fragment key={`${index}-${item.text}`}>
+          {index > 0 ? separator : null}
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="resume-inline-link"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {item.text}
+            </a>
+          ) : (
+            item.text
+          )}
+        </Fragment>
+      );
+    });
+  };
 
   const renderSectionHeader = (title: string, section: SectionKey) => (
     <div className="resume-section-header">
@@ -176,9 +207,13 @@ export function ResumePreview({
                 </div>
                 {(project.subtitle.trim() || project.url.trim()) && (
                   <p className="resume-company">
-                    {[project.subtitle, project.url]
-                      .filter((v) => v.trim())
-                      .join(" · ")}
+                    {renderInlineMetadata(
+                      [
+                        { text: project.subtitle },
+                        { text: project.url, link: true },
+                      ],
+                      " · ",
+                    )}
                   </p>
                 )}
                 <ul>
@@ -241,9 +276,10 @@ export function ResumePreview({
                 </div>
                 {(cert.issuer.trim() || cert.url.trim()) && (
                   <p className="resume-company">
-                    {[cert.issuer, cert.url]
-                      .filter((v) => v.trim())
-                      .join(" · ")}
+                    {renderInlineMetadata(
+                      [{ text: cert.issuer }, { text: cert.url, link: true }],
+                      " · ",
+                    )}
                   </p>
                 )}
               </div>
@@ -391,8 +427,10 @@ export function ResumePreview({
               <span className="placeholder">Your professional headline</span>
             )}
           </p>
-          {contact.length > 0 && (
-            <p className="resume-contact">{contact.join("  ·  ")}</p>
+          {contactItems.length > 0 && (
+            <p className="resume-contact">
+              {renderInlineMetadata(contactItems, "  ·  ")}
+            </p>
           )}
         </header>
         {resume.sectionOrder.map((key) => renderSection(key))}

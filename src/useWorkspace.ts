@@ -17,7 +17,16 @@ export function useWorkspace() {
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const latest = useRef<Workspace | null>(null);
   const persisted = useRef<string | null>(null);
+  const snapshotCache = useRef<{ ws: Workspace; json: string } | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
+
+  const snapshotOf = useCallback((ws: Workspace | null): string | null => {
+    if (!ws) return null;
+    if (snapshotCache.current?.ws === ws) return snapshotCache.current.json;
+    const json = JSON.stringify(ws);
+    snapshotCache.current = { ws, json };
+    return json;
+  }, []);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -25,7 +34,7 @@ export function useWorkspace() {
       const rawSaved = await loadWorkspace();
       const saved = rawSaved ? upgradeWorkspace(rawSaved) : null;
       const next = saved ?? initialWorkspace();
-      persisted.current = saved ? JSON.stringify(saved) : null;
+      persisted.current = saved ? snapshotOf(saved) : null;
       setSavedSnapshot(persisted.current);
       latest.current = next;
       setWorkspace(next);
@@ -33,7 +42,7 @@ export function useWorkspace() {
     } catch (error) {
       setLoadError(errorMessage(error));
     }
-  }, []);
+  }, [snapshotOf]);
 
   useEffect(() => {
     void load();
@@ -43,11 +52,12 @@ export function useWorkspace() {
     // Serialize snapshots so an older, slower disk write cannot replace newer edits.
     const operation = queue.current.then(async () => {
       const next = latest.current;
-      if (!next || JSON.stringify(next) === persisted.current) return;
+      const nextSnapshot = snapshotOf(next);
+      if (!next || nextSnapshot === persisted.current) return;
       setSaving(true);
       try {
         await saveWorkspace(next);
-        persisted.current = JSON.stringify(next);
+        persisted.current = nextSnapshot;
         setSavedSnapshot(persisted.current);
         setSaveError(null);
       } catch (error) {
@@ -61,7 +71,7 @@ export function useWorkspace() {
       /* The error is surfaced in saveError; keep future retries usable. */
     });
     return operation;
-  }, []);
+  }, [snapshotOf]);
 
   const update = useCallback(
     (next: Workspace | ((current: Workspace) => Workspace)) => {
@@ -86,10 +96,7 @@ export function useWorkspace() {
 
   useEffect(() => {
     const preventUnsavedClose = (event: BeforeUnloadEvent) => {
-      if (
-        latest.current &&
-        JSON.stringify(latest.current) !== persisted.current
-      ) {
+      if (latest.current && snapshotOf(latest.current) !== persisted.current) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -104,7 +111,7 @@ export function useWorkspace() {
           try {
             while (
               latest.current &&
-              JSON.stringify(latest.current) !== persisted.current
+              snapshotOf(latest.current) !== persisted.current
             ) {
               await flush();
             }
@@ -130,10 +137,9 @@ export function useWorkspace() {
       unlisten?.();
       window.removeEventListener("beforeunload", preventUnsavedClose);
     };
-  }, [flush]);
+  }, [flush, snapshotOf]);
 
-  const dirty =
-    workspace !== null && JSON.stringify(workspace) !== savedSnapshot;
+  const dirty = workspace !== null && snapshotOf(workspace) !== savedSnapshot;
   return {
     workspace,
     update,

@@ -329,36 +329,120 @@ body {
   background: var(--bg-subtle);
 }
 
-/* Compact sidebar Copilot promo */
+/* Compact sidebar AI promo & collapsible rail */
+.sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.sidebar-collapse-btn {
+  flex-shrink: 0;
+}
 .copilot-promo {
   background: var(--bg-subtle);
   border-color: var(--border-subtle);
   padding: 12px;
+}
+.copilot-promo .promo-top {
+  justify-content: flex-start;
+  gap: 7px;
+}
+.promo-dismiss-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+.promo-dismiss-btn:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
 }
 .copilot-promo h3 {
   font-size: 14px;
   margin: 8px 0 6px;
   color: var(--text-primary);
 }
-.copilot-promo button {
+.copilot-promo > button {
   font-size: 11px;
   color: var(--accent-ui);
   border-top-color: var(--border-subtle);
   margin-top: 8px;
   padding-top: 8px;
 }
+.sidebar--collapsed {
+  width: 68px;
+  flex: 0 0 68px;
+  padding: 20px 10px;
+  align-items: center;
+}
+.app-shell--sidebar-collapsed .main-content {
+  margin-left: 68px;
+}
+.sidebar--collapsed .sidebar-brand-row {
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.sidebar--collapsed .brand {
+  padding: 0;
+  justify-content: center;
+}
+.sidebar--collapsed .sidebar-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.sidebar--collapsed .new-resume {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  gap: 0;
+  margin: 18px 0 14px;
+}
+.sidebar--collapsed nav {
+  width: 100%;
+  align-items: center;
+}
+.sidebar--collapsed .nav-item {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
+@media (max-width: 960px) {
+  .sidebar--collapsed {
+    width: auto;
+    flex-basis: auto;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  .app-shell--sidebar-collapsed .main-content {
+    margin-left: 0;
+  }
+}
 
 /* Spaced EntryControls, Collapsible cards & Non-overlapping Bullet Editor */
 .entry-card.collapsed {
   padding: 9px 11px;
 }
+.entry-topline strong.entry-card-title,
 .entry-card-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-primary) !important;
-  font-size: 12px !important;
+  color: var(--text-primary);
+  font-size: 12px;
 }
 .entry-card-subtitle {
   font-weight: 400;
@@ -523,10 +607,20 @@ body {
   zoom: var(--paper-zoom, 1);
 }
 .resume-paper {
-  background: #ffffff !important;
-  color: #26332e !important;
+  background: #ffffff;
+  color: #26332e;
   border-color: #cfd8c8;
   font-size: 10px;
+}
+.resume-external-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #8da296;
+  text-underline-offset: 2px;
+}
+.resume-external-link:hover {
+  color: var(--resume-accent, #174c43);
+  text-decoration-color: currentColor;
 }
 .resume-headline {
   color: #34473b;
@@ -593,15 +687,15 @@ body {
   font-weight: 600;
 }
 .keyword.matched {
-  background: #e3f1d8;
-  color: #224a17;
-  border-color: #9ec089;
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
+  border-color: var(--status-ok-border);
 }
 .pill-toggle {
   font-size: 11px;
-  background: #e4f1da;
-  color: #1f4717;
-  border-color: #91b57a;
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
+  border-color: var(--status-ok-border);
 }
 .pill-toggle[aria-pressed="false"] {
   background: var(--bg-subtle);
@@ -610,18 +704,22 @@ body {
 }
 .apr-status {
   font-size: 10px;
+  border: 1px solid transparent;
 }
 .apr-status.clear {
-  background: #e1f0d3;
-  color: #214a16;
+  background: var(--status-ok-bg);
+  color: var(--status-ok-fg);
+  border-color: var(--status-ok-border);
 }
 .apr-status.partial {
-  background: #faedd2;
-  color: #69440e;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-fg);
+  border-color: var(--status-warn-border);
 }
 .apr-status.missing {
-  background: #fbe3d8;
-  color: #782d14;
+  background: var(--status-err-bg);
+  color: var(--status-err-fg);
+  border-color: var(--status-err-border);
 }
 .inline-error {
   font-size: 11px;

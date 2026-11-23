@@ -133,7 +133,8 @@ pub(crate) fn probe_copilot(app: &AppHandle) -> CopilotStatus {
     }
 }
 
-pub(crate) fn login_to_copilot(app: &AppHandle) -> CommandResult<()> {
+pub(crate) fn login_to_copilot(app: &AppHandle, cancel: &AiCancelFlag) -> CommandResult<()> {
+    cancel.ensure_not_cancelled()?;
     let executable = find_copilot().ok_or_else(|| {
         "GitHub Copilot CLI was not found on PATH or known macOS locations".to_string()
     })?;
@@ -141,8 +142,11 @@ pub(crate) fn login_to_copilot(app: &AppHandle) -> CommandResult<()> {
     let mut command = Command::new(executable);
     command.args(["login", "--web-flow"]);
     configure_copilot_command(&mut command, &paths)?;
-    let output = run_process(command, None, COPILOT_TIMEOUT, 32 * 1024)
+    let output = run_process_cancellable(command, None, COPILOT_TIMEOUT, 32 * 1024, Some(cancel))
         .map_err(|error| format!("GitHub Copilot login failed to start: {error}"))?;
+    if output.cancelled {
+        return Err(AI_CANCELLED_MESSAGE.to_string());
+    }
     if output.timed_out {
         return Err("GitHub Copilot login timed out after 180 seconds".to_string());
     }
@@ -395,7 +399,9 @@ pub(crate) fn run_copilot_prompt(
     model: &str,
     prompt: &str,
     effort: ReasoningEffort,
+    cancel: &AiCancelFlag,
 ) -> CommandResult<Vec<u8>> {
+    cancel.ensure_not_cancelled()?;
     if prompt.len() > MAX_PROMPT_BYTES {
         return Err("Copilot request exceeds the 256 KB limit".to_string());
     }
@@ -408,13 +414,17 @@ pub(crate) fn run_copilot_prompt(
     command.args(copilot_generation_args(model, effort));
     configure_copilot_command(&mut command, &paths)?;
     command.stdin(Stdio::piped());
-    let output = run_process(
+    let output = run_process_cancellable(
         command,
         Some(prompt.as_bytes()),
         COPILOT_TIMEOUT,
         MAX_GENERATION_OUTPUT_BYTES,
+        Some(cancel),
     )
     .map_err(|error| format!("GitHub Copilot request failed to start: {error}"))?;
+    if output.cancelled {
+        return Err(AI_CANCELLED_MESSAGE.to_string());
+    }
     if output.timed_out {
         return Err("GitHub Copilot request timed out after 180 seconds".to_string());
     }
@@ -493,6 +503,7 @@ pub(crate) struct ProcessOutput {
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
     pub(crate) timed_out: bool,
+    pub(crate) cancelled: bool,
     pub(crate) output_truncated: bool,
 }
 
@@ -502,10 +513,20 @@ struct CappedRead {
 }
 
 pub(crate) fn run_process(
+    command: Command,
+    input: Option<&[u8]>,
+    timeout: Duration,
+    output_limit: usize,
+) -> CommandResult<ProcessOutput> {
+    run_process_cancellable(command, input, timeout, output_limit, None)
+}
+
+pub(crate) fn run_process_cancellable(
     mut command: Command,
     input: Option<&[u8]>,
     timeout: Duration,
     output_limit: usize,
+    cancel: Option<&AiCancelFlag>,
 ) -> CommandResult<ProcessOutput> {
     if input.is_some() {
         command.stdin(Stdio::piped());
@@ -533,9 +554,17 @@ pub(crate) fn run_process(
 
     let deadline = Instant::now() + timeout;
     let mut timed_out = false;
+    let mut cancelled = false;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
+            Ok(None) if cancel.is_some_and(AiCancelFlag::is_cancelled) => {
+                cancelled = true;
+                let _ = child.kill();
+                break child
+                    .wait()
+                    .map_err(|error| format!("unable to reap cancelled process: {error}"))?;
+            }
             Ok(None) if Instant::now() >= deadline => {
                 timed_out = true;
                 let _ = child.kill();
@@ -562,6 +591,7 @@ pub(crate) fn run_process(
         stdout: stdout.bytes,
         stderr: stderr.bytes,
         timed_out,
+        cancelled,
         output_truncated: stdout.truncated,
     })
 }

@@ -1,7 +1,30 @@
-use crate::providers::{validate_compatible_base_url, validate_model_id, ProviderKind};
+use crate::{
+    contract::{AiCancelFlag, AI_CANCELLED_MESSAGE},
+    providers::{validate_compatible_base_url, validate_model_id, ProviderKind},
+};
 use reqwest::{blocking::Client, redirect::Policy};
 use serde_json::json;
-use std::{io::Read, time::Duration};
+use std::{
+    io::Read,
+    sync::{mpsc, OnceLock},
+    thread,
+    time::Duration,
+};
+
+static SHARED_HTTP_CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
+
+fn shared_http_client() -> Result<&'static Client, String> {
+    SHARED_HTTP_CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .redirect(Policy::none())
+                .user_agent("Hireloom/0.2")
+                .build()
+                .map_err(|error| format!("Unable to initialize HTTP client: {error}"))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
 
 #[derive(Debug, Clone)]
 pub struct HttpEndpoints {
@@ -72,6 +95,7 @@ fn summarize_http_error(
     }
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub fn run_http_provider_prompt(
     provider: ProviderKind,
@@ -83,13 +107,94 @@ pub fn run_http_provider_prompt(
     timeout: Duration,
     max_output_bytes: usize,
 ) -> Result<Vec<u8>, String> {
+    run_http_provider_prompt_cancellable(
+        provider,
+        model,
+        prompt,
+        api_key,
+        ollama_base_url,
+        endpoints,
+        timeout,
+        max_output_bytes,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_http_provider_prompt_cancellable(
+    provider: ProviderKind,
+    model: &str,
+    prompt: &str,
+    api_key: Option<&str>,
+    ollama_base_url: &str,
+    endpoints: &HttpEndpoints,
+    timeout: Duration,
+    max_output_bytes: usize,
+    cancel: Option<&AiCancelFlag>,
+) -> Result<Vec<u8>, String> {
+    if let Some(flag) = cancel {
+        flag.ensure_not_cancelled()?;
+        let model = model.to_string();
+        let prompt = prompt.to_string();
+        let api_key = api_key.map(ToOwned::to_owned);
+        let ollama_base_url = ollama_base_url.to_string();
+        let endpoints = endpoints.clone();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let result = execute_http_provider_prompt(
+                provider,
+                &model,
+                &prompt,
+                api_key.as_deref(),
+                &ollama_base_url,
+                &endpoints,
+                timeout,
+                max_output_bytes,
+            );
+            let _ = tx.send(result);
+        });
+        loop {
+            if flag.is_cancelled() {
+                return Err(AI_CANCELLED_MESSAGE.to_string());
+            }
+            match rx.recv_timeout(Duration::from_millis(25)) {
+                Ok(result) => {
+                    flag.ensure_not_cancelled()?;
+                    return result;
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err("AI HTTP worker exited unexpectedly".to_string());
+                }
+            }
+        }
+    }
+
+    execute_http_provider_prompt(
+        provider,
+        model,
+        prompt,
+        api_key,
+        ollama_base_url,
+        endpoints,
+        timeout,
+        max_output_bytes,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_http_provider_prompt(
+    provider: ProviderKind,
+    model: &str,
+    prompt: &str,
+    api_key: Option<&str>,
+    ollama_base_url: &str,
+    endpoints: &HttpEndpoints,
+    timeout: Duration,
+    max_output_bytes: usize,
+) -> Result<Vec<u8>, String> {
     validate_model_id(provider, model)?;
-    let client = Client::builder()
-        .timeout(timeout)
-        .redirect(Policy::none())
-        .user_agent("Hireloom/0.2")
-        .build()
-        .map_err(|error| format!("Unable to initialize HTTP client: {error}"))?;
+    let client = shared_http_client()?;
 
     let system_msg = "Return valid JSON only matching the requested schema, with no extra keys or surrounding prose.";
 
@@ -105,7 +210,7 @@ pub fn run_http_provider_prompt(
                 ollama_base_url.trim_end_matches('/').to_string()
             };
             let url = format!("{base}/chat/completions");
-            let mut request = client.post(&url).json(&json!({
+            let mut request = client.post(&url).timeout(timeout).json(&json!({
                 "model": model,
                 "temperature": 0.2,
                 "messages": [
@@ -158,6 +263,7 @@ pub fn run_http_provider_prompt(
             );
             let response = client
                 .post(&url)
+                .timeout(timeout)
                 .header("x-api-key", key)
                 .header("anthropic-version", "2023-06-01")
                 .json(&json!({
@@ -211,6 +317,7 @@ pub fn run_http_provider_prompt(
             );
             let response = client
                 .post(&url)
+                .timeout(timeout)
                 .header("x-goog-api-key", key)
                 .json(&json!({
                     "systemInstruction": {

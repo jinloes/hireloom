@@ -37,6 +37,19 @@
   --border-control: #6f7f72;
   --danger-fg: #9c2b23;
   --danger-bg: #fff0eb;
+  --status-ok-bg: #e1f0d3;
+  --status-ok-fg: #1e4614;
+  --status-ok-border: #96b880;
+  --status-warn-bg: #faedd2;
+  --status-warn-fg: #5c3b0a;
+  --status-warn-border: #cfa96b;
+  --status-err-bg: #fbe3d8;
+  --status-err-fg: #782610;
+  --status-err-border: #d4927a;
+  --diff-add-bg: #e3f2d3;
+  --diff-add-fg: #204416;
+  --diff-del-bg: #fbe4dc;
+  --diff-del-fg: #7c2d19;
   --green: #174c43;
   --green-hover: #113d35;
   --muted: #435447;
@@ -62,6 +75,19 @@
   --border-control: #6d8376;
   --danger-fg: #ff9d93;
   --danger-bg: #3b1e1b;
+  --status-ok-bg: #1b3824;
+  --status-ok-fg: #d5f3dc;
+  --status-ok-border: #3f7852;
+  --status-warn-bg: #3a2b12;
+  --status-warn-fg: #fde7bc;
+  --status-warn-border: #8a6830;
+  --status-err-bg: #3d1d17;
+  --status-err-fg: #ffdad1;
+  --status-err-border: #8f493a;
+  --diff-add-bg: #1d3c27;
+  --diff-add-fg: #d6f5dd;
+  --diff-del-bg: #40201a;
+  --diff-del-fg: #ffdad2;
   --muted: #b4c4b8;
   --line: #2c3d35;
 }
@@ -335,7 +361,7 @@ button {
   line-height: 1.8;
   color: #6a7860;
 }
-.copilot-promo button {
+.copilot-promo > button {
   margin: 15px 0 0;
   padding: 10px 0 0;
   display: flex;
@@ -562,7 +588,7 @@ button {
 }
 .tools-menu {
   position: absolute;
-  width: 205px;
+  width: 280px;
   top: 34px;
   right: 0;
   background: white;

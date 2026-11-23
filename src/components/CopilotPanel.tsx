@@ -1,5 +1,14 @@
-import { useRef, useState } from "react";
-import { LoaderCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Bot,
+  Cpu,
+  Github,
+  LoaderCircle,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Target,
+} from "lucide-react";
 import {
   defaultAiSettings,
   jobKeywords,
@@ -15,7 +24,11 @@ import {
   type RoleTailorProposal,
   type SummaryOptionsProposal,
 } from "../model";
-import type { CopilotStatus, ProviderCredentialStatus } from "../platform";
+import {
+  desktop,
+  type CopilotStatus,
+  type ProviderCredentialStatus,
+} from "../platform";
 import { AprCoachingSection } from "./copilot/AprCoachingSection";
 import { KeywordTriageCard } from "./copilot/KeywordTriageCard";
 import type { AiBusyKind } from "./copilot/ProposalPrimitives";
@@ -24,6 +37,7 @@ import { RewriteProposalsSection } from "./copilot/RewriteProposalsSection";
 import { Field } from "./Editor";
 
 export type { AiBusyKind };
+export type CoachSubView = "tailor" | "apr" | "provider";
 
 export function CopilotPanel({
   resume,
@@ -126,11 +140,22 @@ export function CopilotPanel({
   aprRefinementStale: boolean;
   onApplyAprRefinement: () => void;
 }) {
+  const [subView, setSubView] = useState<CoachSubView>(() =>
+    aprTarget || aprAnalysis ? "apr" : "tailor",
+  );
   const [selectedRoleEntryId, setSelectedRoleEntryId] = useState<string>(
     () => resume.experience[0]?.id ?? resume.projects[0]?.id ?? "",
   );
   const [aprFocusKeyword, setAprFocusKeyword] = useState<string>("");
   const aprSectionRef = useRef<HTMLElement>(null);
+  const lastAprTargetRef = useRef<AprTarget | null>(aprTarget);
+
+  useEffect(() => {
+    if (aprTarget && aprTarget !== lastAprTargetRef.current) {
+      setSubView("apr");
+    }
+    lastAprTargetRef.current = aprTarget;
+  }, [aprTarget]);
 
   const allKeywords = jobKeywords(resume);
   const activeKeywords = allKeywords.filter((item) => !item.skipped);
@@ -150,6 +175,17 @@ export function CopilotPanel({
         ? activeProviderInfo.configured
         : activeProvider === "ollama";
 
+  const providerSummaryText =
+    activeProvider === "copilot"
+      ? (status?.detail ?? "Checking the local Copilot CLI…")
+      : !desktop
+        ? "AI providers are available in the desktop app."
+        : activeProvider === "ollama"
+          ? `Local Ollama (${aiSettings.ollamaBaseUrl})`
+          : activeProviderInfo?.hasStoredKey || activeProviderInfo?.hasEnvKey
+            ? "API key configured"
+            : "API key required — open Provider Setup";
+
   const roleEntries = [
     ...resume.experience.map((e) => ({
       id: e.id,
@@ -166,237 +202,328 @@ export function CopilotPanel({
     ? selectedRoleEntryId
     : (roleEntries[0]?.id ?? "");
 
+  const hasTailorDraft = Boolean(proposal || summaryOptions || roleProposal);
+  const hasAprDraft = Boolean(aprTarget || aprAnalysis || aprRefinement);
+
   const handleFocusKeywordInApr = (term: string) => {
     setAprFocusKeyword(term);
     if (aprTarget) {
       onSelectApr({ ...aprTarget, focusKeyword: term });
     }
-    aprSectionRef.current?.scrollIntoView?.({
-      behavior: "smooth",
-      block: "start",
-    });
+    setSubView("apr");
+    window.setTimeout(() => {
+      aprSectionRef.current?.scrollIntoView?.({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 0);
   };
 
   return (
     <div className="assistant-content">
       <div className="assistant-intro">
         <span className="assistant-orb">
-          <Sparkles size={26} />
+          <Sparkles size={24} />
         </span>
         <span className="eyebrow">
           YOUR EXPERIENCE. A LITTLE EXTRA CLARITY.
         </span>
-        <h2>Find your best words.</h2>
+        <h2>Tailor &amp; coach.</h2>
         <p>
-          Turn your real experience into a focused story using GitHub Copilot,
-          OpenAI, Anthropic, Gemini, or local Ollama.
+          Align your resume to a target role, coach individual accomplishments
+          with APR, or configure your local or cloud AI provider.
         </p>
       </div>
 
-      <ProviderConnectionCard
-        status={status}
-        aiSettings={aiSettings}
-        providerStates={providerStates}
-        providerReady={providerReady}
-        busy={busy}
-        onRefresh={onRefresh}
-        onLogin={onLogin}
-        onSaveAiSettings={onSaveAiSettings}
-        onSaveApiKey={onSaveApiKey}
-        onClearApiKey={onClearApiKey}
-      />
-
-      <Field
-        label="Job description"
-        value={resume.jobDescription}
-        onChange={(jobDescription) => onChange({ ...resume, jobDescription })}
-        multiline
-        rows={9}
-        maxLength={20_000}
-        placeholder="Paste the job description here to tailor your summary and experience highlights to the role…"
-        hint="Optional. Leave this blank for a general resume polish."
-      />
-      {resume.jobDescription.trim() && (
-        <KeywordTriageCard
-          resume={resume}
-          activeKeywords={activeKeywords}
-          matchedKeywords={matchedKeywords}
-          missingKeywords={missingKeywords}
-          skippedKeywords={skippedKeywords}
-          onChange={onChange}
-          onFocusKeywordInApr={handleFocusKeywordInApr}
-        />
-      )}
-      <div className="privacy-note">
-        <ShieldCheck size={19} />
-        <p>
-          Your contact fields and personal URLs stay out of the prompt. Summary,
-          work history, projects, education, skills, headline, and job
-          description are sent to {activeProviderLabel} only when you ask.
-        </p>
-      </div>
-      <label className="consent-check">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(event) => onConsent(event.target.checked)}
-          disabled={
-            busy === "generate" ||
-            busy === "summaryOptions" ||
-            busy === "tailorRole"
-          }
-        />
-        <span>
-          Send this content to {activeProviderLabel} for this request. I
-          understand this uses my configured provider account and is subject to
-          its data policies.
-        </span>
-      </label>
-      <button
-        type="button"
-        className="button primary generate-button"
-        disabled={!providerReady || !consent || Boolean(busy)}
-        onClick={onGenerate}
+      <div
+        className="coach-subview-tabs"
+        role="group"
+        aria-label="Tailor and coach sections"
       >
-        {busy === "generate" ? (
-          <LoaderCircle className="spin" size={17} />
-        ) : (
-          <Sparkles size={17} />
-        )}
-        {busy === "generate"
-          ? "Finding your best words…"
-          : resume.jobDescription.trim()
-            ? "Tailor to this role"
-            : "Polish my resume"}
-      </button>
+        <button
+          type="button"
+          className={subView === "tailor" ? "active" : ""}
+          aria-pressed={subView === "tailor"}
+          onClick={() => setSubView("tailor")}
+        >
+          <Sparkles size={13} />
+          Role Tailoring
+          {hasTailorDraft && (
+            <span className="subview-dot" aria-hidden="true" />
+          )}
+        </button>
+        <button
+          type="button"
+          className={subView === "apr" ? "active" : ""}
+          aria-pressed={subView === "apr"}
+          onClick={() => setSubView("apr")}
+        >
+          <Target size={13} />
+          APR Bullet Coach
+          {hasAprDraft && <span className="subview-dot" aria-hidden="true" />}
+        </button>
+        <button
+          type="button"
+          className={subView === "provider" ? "active" : ""}
+          aria-pressed={subView === "provider"}
+          onClick={() => setSubView("provider")}
+        >
+          <Settings2 size={13} />
+          Provider Setup
+        </button>
+      </div>
 
-      {(onGenerateSummaryOptions ||
-        (onTailorRole && roleEntries.length > 0)) && (
-        <div className="focused-ai-actions">
-          {onGenerateSummaryOptions && (
+      {subView !== "provider" && (
+        <div className="provider-summary-strip">
+          <div className="provider-summary-main">
+            <span
+              className={`status-dot ${providerReady ? "available" : ""}`}
+              role="img"
+              aria-label={
+                providerReady ? "Provider ready" : "Provider not configured"
+              }
+            />
+            {activeProvider === "copilot" ? (
+              <Github size={15} />
+            ) : activeProvider === "ollama" ? (
+              <Cpu size={15} />
+            ) : (
+              <Bot size={15} />
+            )}
+            <strong>{activeProviderLabel}</strong>
+            <code className="model-pill">{aiSettings.primaryModel}</code>
             <button
               type="button"
-              className="button secondary small"
-              disabled={!providerReady || !consent || Boolean(busy)}
-              onClick={onGenerateSummaryOptions}
+              className="text-button provider-jump-btn"
+              onClick={() => setSubView("provider")}
             >
-              {busy === "summaryOptions" ? (
-                <LoaderCircle className="spin" size={14} />
-              ) : (
-                <Sparkles size={14} />
-              )}
-              {busy === "summaryOptions"
-                ? "Drafting summaries…"
-                : "Suggest 3 summary angles"}
+              Configure
             </button>
-          )}
-          {onTailorRole && roleEntries.length > 0 && (
-            <div className="role-tailor-bar">
-              <label className="visually-hidden" htmlFor="role-tailor-select">
-                Role or project to tailor
-              </label>
-              <select
-                id="role-tailor-select"
-                value={effectiveRoleId}
-                disabled={Boolean(busy)}
-                onChange={(e) => setSelectedRoleEntryId(e.target.value)}
-              >
-                {roleEntries.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="button secondary small"
-                disabled={
-                  !providerReady ||
-                  !consent ||
-                  !effectiveRoleId ||
-                  Boolean(busy)
-                }
-                onClick={() => onTailorRole(effectiveRoleId)}
-              >
-                {busy === "tailorRole" ? (
-                  <LoaderCircle className="spin" size={14} />
-                ) : (
-                  <Sparkles size={14} />
-                )}
-                {busy === "tailorRole" ? "Tailoring role…" : "Tailor role"}
-              </button>
-            </div>
-          )}
+          </div>
+          <p className="provider-summary-detail">{providerSummaryText}</p>
         </div>
       )}
 
-      <p className="fine-print center">
-        {busy === "generate" ||
-        busy === "summaryOptions" ||
-        busy === "tailorRole"
-          ? "This can take up to 3 minutes. No changes are applied automatically."
-          : "No invented experience. No automatic edits. You're in control."}
-      </p>
+      {subView === "provider" && (
+        <>
+          <ProviderConnectionCard
+            status={status}
+            aiSettings={aiSettings}
+            providerStates={providerStates}
+            providerReady={providerReady}
+            busy={busy}
+            defaultExpanded
+            onRefresh={onRefresh}
+            onLogin={onLogin}
+            onSaveAiSettings={onSaveAiSettings}
+            onSaveApiKey={onSaveApiKey}
+            onClearApiKey={onClearApiKey}
+          />
+          <div className="setup-note">
+            <strong>Provider options</strong>
+            <p>
+              Use GitHub Copilot CLI (
+              <code>npm install -g @github/copilot</code>), save an OpenAI,
+              Anthropic, or Gemini API key in your OS credential store, or run
+              local models offline via Ollama at <code>127.0.0.1:11434</code>.
+            </p>
+          </div>
+        </>
+      )}
 
-      <RewriteProposalsSection
-        resume={resume}
-        busy={busy}
-        roleEntries={roleEntries}
-        summaryOptions={summaryOptions}
-        summaryOptionsStale={summaryOptionsStale}
-        onApplySummaryOption={onApplySummaryOption}
-        onDiscardSummaryOptions={onDiscardSummaryOptions}
-        roleProposal={roleProposal}
-        roleSelection={roleSelection}
-        onChangeRoleSelection={onChangeRoleSelection}
-        roleStale={roleStale}
-        onApplyRoleProposal={onApplyRoleProposal}
-        onDiscardRoleProposal={onDiscardRoleProposal}
-        proposal={proposal}
-        proposalSelection={proposalSelection}
-        onChangeProposalSelection={onChangeProposalSelection}
-        stale={stale}
-        onApply={onApply}
-        onDiscard={onDiscard}
-      />
+      {subView === "tailor" && (
+        <>
+          <Field
+            label="Job description"
+            value={resume.jobDescription}
+            onChange={(jobDescription) =>
+              onChange({ ...resume, jobDescription })
+            }
+            multiline
+            rows={8}
+            maxLength={20_000}
+            placeholder="Paste the job description here to tailor your summary and experience highlights to the role…"
+            hint="Optional. Leave this blank for a general resume polish."
+          />
+          {resume.jobDescription.trim() && (
+            <KeywordTriageCard
+              resume={resume}
+              activeKeywords={activeKeywords}
+              matchedKeywords={matchedKeywords}
+              missingKeywords={missingKeywords}
+              skippedKeywords={skippedKeywords}
+              onChange={onChange}
+              onFocusKeywordInApr={handleFocusKeywordInApr}
+            />
+          )}
+          <div className="privacy-note">
+            <ShieldCheck size={19} />
+            <p>
+              Your contact fields and personal URLs stay out of the prompt.
+              Summary, work history, projects, education, skills, headline, and
+              job description are sent to {activeProviderLabel} only when you
+              ask.
+            </p>
+          </div>
+          <label className="consent-check">
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(event) => onConsent(event.target.checked)}
+              disabled={
+                busy === "generate" ||
+                busy === "summaryOptions" ||
+                busy === "tailorRole"
+              }
+            />
+            <span>
+              Send this content to {activeProviderLabel} for this request. I
+              understand this uses my configured provider account and is subject
+              to its data policies.
+            </span>
+          </label>
+          <button
+            type="button"
+            className="button primary generate-button"
+            disabled={!providerReady || !consent || Boolean(busy)}
+            onClick={onGenerate}
+          >
+            {busy === "generate" ? (
+              <LoaderCircle className="spin" size={17} />
+            ) : (
+              <Sparkles size={17} />
+            )}
+            {busy === "generate"
+              ? "Finding your best words…"
+              : resume.jobDescription.trim()
+                ? "Tailor to this role"
+                : "Polish my resume"}
+          </button>
 
-      <AprCoachingSection
-        sectionRef={aprSectionRef}
-        resume={resume}
-        activeProviderLabel={activeProviderLabel}
-        providerReady={providerReady}
-        busy={busy}
-        missingKeywords={missingKeywords}
-        aprFocusKeyword={aprFocusKeyword}
-        onSetAprFocusKeyword={setAprFocusKeyword}
-        aprTarget={aprTarget}
-        onSelectApr={onSelectApr}
-        aprConsent={aprConsent}
-        onAprConsent={onAprConsent}
-        onAnalyzeApr={onAnalyzeApr}
-        aprAnalysis={aprAnalysis}
-        aprStale={aprStale}
-        onApplyApr={onApplyApr}
-        onDiscardApr={onDiscardApr}
-        aprAnswers={aprAnswers}
-        onAprAnswer={onAprAnswer}
-        aprRefinementConsent={aprRefinementConsent}
-        onAprRefinementConsent={onAprRefinementConsent}
-        onRefineApr={onRefineApr}
-        aprRefinement={aprRefinement}
-        aprRefinementStale={aprRefinementStale}
-        onApplyAprRefinement={onApplyAprRefinement}
-      />
+          {(onGenerateSummaryOptions ||
+            (onTailorRole && roleEntries.length > 0)) && (
+            <div className="focused-ai-actions">
+              {onGenerateSummaryOptions && (
+                <button
+                  type="button"
+                  className="button secondary small"
+                  disabled={!providerReady || !consent || Boolean(busy)}
+                  onClick={onGenerateSummaryOptions}
+                >
+                  {busy === "summaryOptions" ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <Sparkles size={14} />
+                  )}
+                  {busy === "summaryOptions"
+                    ? "Drafting summaries…"
+                    : "Suggest 3 summary angles"}
+                </button>
+              )}
+              {onTailorRole && roleEntries.length > 0 && (
+                <div className="role-tailor-bar">
+                  <label
+                    className="visually-hidden"
+                    htmlFor="role-tailor-select"
+                  >
+                    Role or project to tailor
+                  </label>
+                  <select
+                    id="role-tailor-select"
+                    value={effectiveRoleId}
+                    disabled={Boolean(busy)}
+                    onChange={(e) => setSelectedRoleEntryId(e.target.value)}
+                  >
+                    {roleEntries.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="button secondary small"
+                    disabled={
+                      !providerReady ||
+                      !consent ||
+                      !effectiveRoleId ||
+                      Boolean(busy)
+                    }
+                    onClick={() => onTailorRole(effectiveRoleId)}
+                  >
+                    {busy === "tailorRole" ? (
+                      <LoaderCircle className="spin" size={14} />
+                    ) : (
+                      <Sparkles size={14} />
+                    )}
+                    {busy === "tailorRole" ? "Tailoring role…" : "Tailor role"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-      <div className="setup-note">
-        <strong>Provider options</strong>
-        <p>
-          Use GitHub Copilot CLI (<code>npm install -g @github/copilot</code>),
-          save an OpenAI, Anthropic, or Gemini API key in your OS credential
-          store, or run local models offline via Ollama at{" "}
-          <code>127.0.0.1:11434</code>.
-        </p>
-      </div>
+          <p className="fine-print center">
+            {busy === "generate" ||
+            busy === "summaryOptions" ||
+            busy === "tailorRole"
+              ? "This can take up to 3 minutes. No changes are applied automatically."
+              : "No invented experience. No automatic edits. You're in control."}
+          </p>
+
+          <RewriteProposalsSection
+            resume={resume}
+            busy={busy}
+            roleEntries={roleEntries}
+            summaryOptions={summaryOptions}
+            summaryOptionsStale={summaryOptionsStale}
+            onApplySummaryOption={onApplySummaryOption}
+            onDiscardSummaryOptions={onDiscardSummaryOptions}
+            roleProposal={roleProposal}
+            roleSelection={roleSelection}
+            onChangeRoleSelection={onChangeRoleSelection}
+            roleStale={roleStale}
+            onApplyRoleProposal={onApplyRoleProposal}
+            onDiscardRoleProposal={onDiscardRoleProposal}
+            proposal={proposal}
+            proposalSelection={proposalSelection}
+            onChangeProposalSelection={onChangeProposalSelection}
+            stale={stale}
+            onApply={onApply}
+            onDiscard={onDiscard}
+          />
+        </>
+      )}
+
+      {subView === "apr" && (
+        <AprCoachingSection
+          sectionRef={aprSectionRef}
+          resume={resume}
+          activeProviderLabel={activeProviderLabel}
+          providerReady={providerReady}
+          busy={busy}
+          missingKeywords={missingKeywords}
+          aprFocusKeyword={aprFocusKeyword}
+          onSetAprFocusKeyword={setAprFocusKeyword}
+          aprTarget={aprTarget}
+          onSelectApr={onSelectApr}
+          aprConsent={aprConsent}
+          onAprConsent={onAprConsent}
+          onAnalyzeApr={onAnalyzeApr}
+          aprAnalysis={aprAnalysis}
+          aprStale={aprStale}
+          onApplyApr={onApplyApr}
+          onDiscardApr={onDiscardApr}
+          aprAnswers={aprAnswers}
+          onAprAnswer={onAprAnswer}
+          aprRefinementConsent={aprRefinementConsent}
+          onAprRefinementConsent={onAprRefinementConsent}
+          onRefineApr={onRefineApr}
+          aprRefinement={aprRefinement}
+          aprRefinementStale={aprRefinementStale}
+          onApplyAprRefinement={onApplyAprRefinement}
+        />
+      )}
     </div>
   );
 }

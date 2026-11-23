@@ -1,6 +1,14 @@
-import { FileText, LayoutTemplate, LockKeyhole, Sparkles } from "lucide-react";
+import {
+  FileText,
+  LayoutTemplate,
+  LoaderCircle,
+  LockKeyhole,
+  Sparkles,
+  Square,
+} from "lucide-react";
 import {
   exampleResume,
+  PROVIDER_LABELS,
   pullExperienceFromLibrary,
   pullProjectFromLibrary,
   saveExperienceToLibrary,
@@ -20,9 +28,9 @@ import type { StudioTab } from "./StudioPreviewPane";
 
 export function StudioEditPane({
   resume,
+  resumeSnapshot,
   careerLibrary,
   tab,
-  blocked,
   focusRequest,
   ai,
   onSetTab,
@@ -35,9 +43,9 @@ export function StudioEditPane({
   onShowLicense,
 }: {
   resume: Resume;
+  resumeSnapshot: string;
   careerLibrary: CareerLibrary;
   tab: StudioTab;
-  blocked: boolean;
   focusRequest: EditorFocusRequest | null;
   ai: ReturnType<typeof useStudioAiWorkflows>;
   onSetTab: (tab: StudioTab) => void;
@@ -51,13 +59,21 @@ export function StudioEditPane({
   onReport: (error: unknown) => void;
   onShowLicense: () => void;
 }) {
+  const aiCancellableBusy =
+    ai.busy === "generate" ||
+    ai.busy === "summaryOptions" ||
+    ai.busy === "tailorRole" ||
+    ai.busy === "analyze" ||
+    ai.busy === "refine" ||
+    ai.busy === "login";
+
   return (
     <div className="edit-pane">
       <div className="editor-tabs" role="tablist" aria-label="Resume tools">
         {(
           [
             { id: "content", label: "Content", Icon: FileText },
-            { id: "copilot", label: "Copilot", Icon: Sparkles },
+            { id: "copilot", label: "Tailor & Coach", Icon: Sparkles },
             { id: "style", label: "Design", Icon: LayoutTemplate },
           ] as const
         ).map(({ id, label, Icon }) => (
@@ -68,7 +84,6 @@ export function StudioEditPane({
             aria-controls={`panel-${id}`}
             aria-selected={tab === id}
             tabIndex={tab === id ? 0 : -1}
-            disabled={blocked}
             onClick={() => onSetTab(id)}
             onKeyDown={(event) => {
               const tabs: StudioTab[] = ["content", "copilot", "style"];
@@ -94,6 +109,23 @@ export function StudioEditPane({
           </button>
         ))}
       </div>
+      {aiCancellableBusy && (
+        <div className="ai-active-banner" role="status">
+          <span>
+            <LoaderCircle size={14} className="spin" />
+            {ai.busy === "login"
+              ? "Waiting for GitHub sign-in…"
+              : `Working with ${PROVIDER_LABELS[ai.aiSettings.primaryProvider]}…`}
+          </span>
+          <button
+            type="button"
+            className="button secondary small"
+            onClick={() => void ai.cancelActiveRequest()}
+          >
+            <Square size={11} /> Cancel request
+          </button>
+        </div>
+      )}
       <div className="editor-scroll">
         {tab === "content" && (
           <div role="tabpanel" id="panel-content" aria-labelledby="tab-content">
@@ -195,7 +227,7 @@ export function StudioEditPane({
                 summaryOptions={ai.summarySuggestion?.value ?? null}
                 summaryOptionsStale={
                   ai.summarySuggestion !== null &&
-                  ai.summarySuggestion.source !== JSON.stringify(resume)
+                  ai.summarySuggestion.source !== resumeSnapshot
                 }
                 onApplySummaryOption={ai.applySummaryOption}
                 onDiscardSummaryOptions={() => ai.setSummarySuggestion(null)}
@@ -209,7 +241,7 @@ export function StudioEditPane({
                 }
                 roleStale={
                   ai.roleSuggestion !== null &&
-                  ai.roleSuggestion.source !== JSON.stringify(resume)
+                  ai.roleSuggestion.source !== resumeSnapshot
                 }
                 onApplyRoleProposal={ai.applyRoleProposal}
                 onDiscardRoleProposal={() => ai.setRoleSuggestion(null)}
@@ -222,7 +254,7 @@ export function StudioEditPane({
                 }
                 stale={
                   ai.suggestion !== null &&
-                  ai.suggestion.source !== JSON.stringify(resume)
+                  ai.suggestion.source !== resumeSnapshot
                 }
                 onApply={ai.applySuggestions}
                 onDiscard={() => ai.setSuggestion(null)}

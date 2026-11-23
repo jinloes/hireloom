@@ -40,6 +40,7 @@ vi.mock("./platform", async (importOriginal) => {
     tailorExperienceRole: vi.fn(),
     structureImportedResume: vi.fn(),
     loginToCopilot: vi.fn(),
+    cancelAiRequest: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -47,6 +48,7 @@ let workspace: Workspace;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   const resume = exampleResume();
   workspace = {
     version: WORKSPACE_VERSION,
@@ -149,7 +151,7 @@ describe("resume studio", () => {
     };
     vi.mocked(platform.generateResume).mockResolvedValue(proposal);
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     const generate = screen.getByRole("button", { name: "Polish my resume" });
     await waitFor(() =>
       expect(
@@ -197,7 +199,7 @@ describe("resume studio", () => {
       new Error("Authentication required"),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     fireEvent.click(screen.getByRole("checkbox"));
     await waitFor(() =>
       expect(
@@ -235,12 +237,13 @@ describe("resume studio", () => {
       }),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     await waitFor(() =>
       expect(
         screen.queryByText("Checking the local Copilot CLI…"),
       ).not.toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: /APR Bullet Coach/ }));
     fireEvent.click(
       screen.getAllByRole("button", { name: "Analyze with APR" })[0],
     );
@@ -281,7 +284,7 @@ describe("resume studio", () => {
     fireEvent.change(screen.getByLabelText("Full name"), {
       target: { value: "A changed unsent name" },
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Copilot" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Tailor & Coach" }));
     const apply = screen.getByRole("button", { name: "Apply initial rewrite" });
     expect(apply).toBeEnabled();
     fireEvent.click(apply);
@@ -332,12 +335,13 @@ describe("resume studio", () => {
     );
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     await waitFor(() =>
       expect(
         screen.queryByText("Checking the local Copilot CLI…"),
       ).not.toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: /APR Bullet Coach/ }));
     fireEvent.click(
       screen.getAllByRole("button", { name: "Analyze with APR" })[0],
     );
@@ -383,12 +387,13 @@ describe("resume studio", () => {
       }),
     );
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     await waitFor(() =>
       expect(
         screen.queryByText("Checking the local Copilot CLI…"),
       ).not.toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: /APR Bullet Coach/ }));
     fireEvent.click(
       screen.getAllByRole("button", { name: "Analyze with APR" })[0],
     );
@@ -406,7 +411,7 @@ describe("resume studio", () => {
     fireEvent.change(screen.getByLabelText("Job title 1"), {
       target: { value: "Changed role" },
     });
-    fireEvent.click(screen.getByRole("tab", { name: "Copilot" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Tailor & Coach" }));
     expect(
       screen.getByRole("button", { name: "Apply initial rewrite" }),
     ).toBeDisabled();
@@ -464,12 +469,13 @@ describe("resume studio", () => {
       }));
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     await waitFor(() =>
       expect(
         screen.queryByText("Checking the local Copilot CLI…"),
       ).not.toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: /APR Bullet Coach/ }));
     fireEvent.click(
       screen.getAllByRole("button", { name: "Analyze with APR" })[0],
     );
@@ -577,12 +583,13 @@ describe("resume studio", () => {
       .mockRejectedValueOnce(new Error("Malformed Copilot response"));
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     await waitFor(() =>
       expect(
         screen.queryByText("Checking the local Copilot CLI…"),
       ).not.toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: /APR Bullet Coach/ }));
     fireEvent.click(
       screen.getAllByRole("button", { name: "Analyze with APR" })[0],
     );
@@ -674,12 +681,13 @@ describe("resume studio", () => {
     )[0];
     fireEvent.click(inlineApr);
     expect(screen.getByText("Selected accomplishment")).toBeVisible();
-    expect(screen.getByRole("tab", { name: "Copilot" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "Tailor & Coach" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
 
     // Interactive JD keyword triage
+    fireEvent.click(screen.getByRole("button", { name: /Role Tailoring/ }));
     fireEvent.change(screen.getByLabelText("Job description"), {
       target: { value: "Experience with FastAPI, Kubernetes, and Figma." },
     });
@@ -690,7 +698,8 @@ describe("resume studio", () => {
 
     // Reset APR selection so only main consent checkbox is checked, then test selective proposal apply
     fireEvent.click(screen.getByRole("tab", { name: "Content" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Copilot" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Tailor & Coach" }));
+    fireEvent.click(screen.getByRole("button", { name: /Role Tailoring/ }));
     fireEvent.click(
       screen.getByRole("checkbox", {
         name: /Send this content to GitHub Copilot/,
@@ -797,12 +806,13 @@ describe("resume studio", () => {
   it("supports multi-provider switching, OS keychain keys, 2-model grounding badges, summary options, role tailoring, and keyword-aware APR", async () => {
     const original = workspace.resumes[0];
     render(<App />);
-    fireEvent.click(await screen.findByRole("tab", { name: "Copilot" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
     await waitFor(() =>
       expect(
         screen.queryByText("Checking the local Copilot CLI…"),
       ).not.toBeInTheDocument(),
     );
+    fireEvent.click(screen.getByRole("button", { name: /Provider Setup/ }));
 
     // Switch primary provider to OpenAI API and save an API key to OS credential store
     vi.mocked(platform.aiProviderStatus).mockResolvedValue({
@@ -875,6 +885,7 @@ describe("resume studio", () => {
         "sk-test-openai-key",
       ),
     );
+    fireEvent.click(screen.getByRole("button", { name: /Role Tailoring/ }));
 
     // Suggest 3 summary angles & apply one
     vi.mocked(platform.generateSummaryOptions).mockResolvedValue({
@@ -975,5 +986,91 @@ describe("resume studio", () => {
       expect.objectContaining({ focusKeyword: "graphql" }),
       true,
     );
+  });
+
+  it("cancels in-flight AI requests without blocking studio navigation or mutating the resume", async () => {
+    const original = workspace.resumes[0];
+    let rejectGenerate: ((reason?: unknown) => void) | undefined;
+    vi.mocked(platform.generateResume).mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectGenerate = reject;
+        }),
+    );
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Checking the local Copilot CLI…"),
+      ).not.toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Polish my resume" }));
+
+    const cancelBtn = await screen.findByRole("button", {
+      name: "Cancel request",
+    });
+    // Navigation remains interactive while AI runs
+    expect(screen.getByRole("button", { name: /My resumes/ })).toBeEnabled();
+
+    fireEvent.click(cancelBtn);
+    expect(platform.cancelAiRequest).toHaveBeenCalledTimes(1);
+    rejectGenerate?.(new Error(platform.AI_CANCELLED_MESSAGE));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Cancel request" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByText(/AI request cancelled/)).toBeVisible();
+    expect(screen.getByTestId("resume-preview")).toHaveTextContent(
+      original.summary,
+    );
+  });
+
+  it("supports collapsible sidebar, persisted UI prefs, preview hyperlinks, and variant diff compare", async () => {
+    const baseResume = workspace.resumes[0];
+    const tailoredResume = {
+      ...exampleResume(),
+      id: "resume-tailored",
+      title: "Staff Role Variant",
+      summary: "Tailored summary highlighting distributed architecture.",
+      skills: [...baseResume.skills, "Rust"],
+    };
+    workspace = {
+      ...workspace,
+      activeResumeId: tailoredResume.id,
+      resumes: [baseResume, tailoredResume],
+    };
+    vi.mocked(platform.loadWorkspace).mockResolvedValue(workspace);
+
+    render(<App />);
+    await screen.findByDisplayValue("Staff Role Variant");
+
+    // External URLs in basics render clickable normalized anchors
+    const githubLink = screen
+      .getByTestId("resume-preview")
+      .querySelector('a[href="https://github.com/alexmorgan"]');
+    expect(githubLink).not.toBeNull();
+
+    // Ctrl+\ toggles collapsed sidebar and persists preference
+    fireEvent.keyDown(window, { key: "\\", ctrlKey: true });
+    expect(
+      screen.getByRole("button", { name: /Expand workspace sidebar/ }),
+    ).toBeVisible();
+    expect(
+      JSON.parse(window.localStorage.getItem("hireloom.ui-prefs.v1") ?? "{}"),
+    ).toMatchObject({ sidebarCollapsed: true });
+
+    // Compare mode shows word-level diffs against another variant
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    const compareSheet = await screen.findByTestId("variant-compare-view");
+    fireEvent.change(screen.getByLabelText("Baseline"), {
+      target: { value: baseResume.id },
+    });
+    expect(compareSheet).toHaveTextContent("2 tailored sections differ");
+    expect(compareSheet).toHaveTextContent("Rust");
+    expect(compareSheet).toHaveTextContent("distributed");
   });
 });

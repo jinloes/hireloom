@@ -3,8 +3,9 @@
 **Your experience, beautifully told.**
 
 A local-first desktop resume studio built with Tauri 2, React, TypeScript, and
-Rust. Create a thoughtful resume for each opportunity, use GitHub Copilot to
-refine your wording, and export a clean PDF without a watermark.
+Rust. Create a thoughtful resume for each opportunity, optionally connect your
+preferred AI provider to refine wording without invented facts, and export a
+clean PDF or Word document without a watermark.
 
 ## Start the desktop app
 
@@ -20,41 +21,47 @@ npm run tauri dev
 
 `npm run dev` starts a **browser preview** at `http://localhost:1420`. It has
 separate browser-local storage, supports editing, local PDF/DOCX import and
-downloads, and cannot connect to Copilot. It does not read your desktop
-workspace.
+downloads, PDF page proofing, and variant comparison, and cannot connect to
+desktop AI providers. It does not read your desktop workspace.
 
 ## What's included
 
-- Multiple resume documents with rename, duplicate, confirmed deletion, and a
-  local **Master Career Library** for spinning up role-tailored variants while
-  keeping canonical experience, projects, education, certifications, and skill
-  categories in sync.
+- Multiple resume documents with rename, duplicate, confirmed deletion, a local
+  **Master Career Library** for spinning up role-tailored variants, and an
+  in-studio **Compare** view showing word-level diffs against your Career
+  Library or any other resume variant.
 - Local **PDF and Word (`.docx`) resume import** into a reviewable draft before
-  adding to your workspace—no cloud upload or automatic AI call.
-- Personal details including portfolio, LinkedIn, and GitHub URLs; summary;
-  reorderable experience, **projects**, education, **certifications**,
+  adding to your workspace—no cloud upload or automatic AI call (with optional
+  consented PII-redacted AI section cleanup on desktop).
+- Personal details including clickable portfolio/LinkedIn and GitHub URLs;
+  summary; reorderable experience, **projects** (with clickable URLs),
+  education, **certifications** (with clickable credential URLs),
   **categorized skill groups** (plus flat skills), **custom sections** (such as
   Volunteering or Awards), and configurable **section order**.
-- A live preview with estimated page-break markers, **90% / 100% / 125% zoom**,
-  click-to-jump section navigation, a resizable split-pane divider, **light and
-  dark studio themes** (while keeping the resume paper white), Editorial and
-  Modern layouts, three accent colors, **A4 and US Letter** page sizes, and
-  **Compact / Standard / Spacious** density controls.
+- A **Live sheet** preview with estimated page-break markers, an on-demand
+  **PDF proof** mode rendering exact PDF pagination and page counts in-studio,
+  **90% / 100% / 125% zoom**, click-to-jump section navigation, a collapsible
+  navigation rail (`Ctrl/Cmd+\`), a resizable split-pane divider, persisted
+  **light and dark studio themes** (while keeping the resume paper white),
+  Editorial and Modern layouts, three accent colors, **A4 and US Letter** page
+  sizes, and **Compact / Standard / Spacious** density controls.
 - Collapsible editor cards, interactive removable skill chips, bounded
   multi-step **Undo / Redo** (`Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z`, including
   one-click recovery on deleted entries and AI rewrites), and local autosaving
   with visible failures, retries, and recovery backup export.
-- Single-column, selectable-text **PDF** (with embedded fonts) and **Word
-  (`.docx`)** exports.
+- Single-column, selectable-text **PDF** (with embedded fonts and live
+  hyperlinks) and **Word (`.docx`)** (with live OpenXML hyperlinks) exports.
 - Workspace v2 JSON backups with automatic v1 migration on load and validated,
   non-destructive imports.
-- Dynamic job-description keyword extraction with **Add skill / Skip / Restore**
-  triage, plus deterministic local **Resume Quality Checks** across
-  Completeness, Impact & Verbs, Formatting & Length, and Role Alignment.
-- In-app GitHub Copilot sign-in, factual rewriting with **word-level diffs and
-  per-item Include / Keep original toggles**, explicit consent, inline and panel
-  APR accomplishment coaching (for both experience and project bullets),
-  answer-guided refinement, stale-result protection, and full toolbar undo/redo.
+- Dynamic job-description keyword extraction with **Add skill / Coach APR /
+  Skip / Restore** triage, plus deterministic local **Resume Quality Checks**
+  across Completeness, Impact & Verbs, Formatting & Length, and Role Alignment.
+- A focused **Tailor & Coach** panel (`Role Tailoring`, `APR Bullet Coach`, and
+  `Provider Setup`) supporting isolated **GitHub Copilot CLI**, **OpenAI**,
+  **Anthropic**, **Google Gemini** (with OS keychain API key storage), and local
+  **Ollama / OpenAI-compatible** endpoints, optional **2-model factual grounding
+  verification**, instant request cancellation, explicit per-request consent,
+  selective word-diff review, and APR accomplishment coaching.
 - Repository instructions for GitHub Copilot in `.github/copilot-instructions.md`.
 
 Start with your own details, **upload an existing PDF or DOCX resume**, or click
@@ -62,19 +69,22 @@ Start with your own details, **upload an existing PDF or DOCX resume**, or click
 history are demonstration content, not claims about a real person. The app opens
 to a blank resume and never uploads an example or your content automatically.
 
-## GitHub Copilot
+## AI providers and GitHub Copilot
 
-Install the standalone [GitHub Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli)
-if you do not already have it:
+Open **Tailor & Coach → Provider Setup** in the desktop app to choose your AI
+provider:
 
-```sh
-npm install -g @github/copilot
-```
+- **GitHub Copilot CLI** (`npm install -g @github/copilot`, then **Sign in with
+  GitHub** inside Hireloom),
+- **OpenAI**, **Anthropic**, or **Google Gemini** (API keys stored in your OS
+  credential manager or read from standard environment variables—never written
+  to `workspace.json`), or
+- **Local Ollama / OpenAI-compatible** endpoints (such as `http://127.0.0.1:11434/v1`).
 
-Open the **Copilot** tab in the desktop app and select **Sign in with GitHub**.
-Complete the browser authorization flow. A Copilot-enabled account, appropriate
-organization policy, and available usage are required. The installed CLI and
-account entitlement are separate: detecting the executable does not verify login.
+You can also enable **2-model factual verification** to have a second model
+audit proposed bullets against your current resume (`Supported`, `Inferred`, or
+`Unsupported`), and cancel any in-flight AI request immediately without losing
+unsaved edits.
 
 Hireloom uses a separate, app-specific Copilot configuration directory, so sign
 in through Hireloom even if you already use Copilot for development. It does not

@@ -19,7 +19,10 @@ use providers::{
     OsKeyringStore, ProviderKind,
 };
 #[cfg(test)]
-use providers::{run_http_provider_prompt, validate_model_id, HttpEndpoints};
+use providers::{
+    run_http_provider_prompt, run_http_provider_prompt_cancellable, validate_model_id,
+    HttpEndpoints,
+};
 use responses::*;
 use std::sync::{Arc, Mutex};
 use storage::*;
@@ -32,6 +35,54 @@ use workflows::*;
 struct AppState {
     save_lock: Mutex<()>,
     generation_lock: Arc<tokio::sync::Mutex<()>>,
+    active_cancel: Arc<Mutex<Option<AiCancelFlag>>>,
+}
+
+struct ActiveCancelGuard {
+    slot: Arc<Mutex<Option<AiCancelFlag>>>,
+    flag: AiCancelFlag,
+}
+
+impl Drop for ActiveCancelGuard {
+    fn drop(&mut self) {
+        if let Ok(mut current) = self.slot.lock() {
+            if current.as_ref().is_some_and(|item| item.ptr_eq(&self.flag)) {
+                *current = None;
+            }
+        }
+    }
+}
+
+fn begin_cancellable_ai_run(
+    slot: &Arc<Mutex<Option<AiCancelFlag>>>,
+) -> CommandResult<(AiCancelFlag, ActiveCancelGuard)> {
+    let flag = AiCancelFlag::new();
+    let mut guard = slot
+        .lock()
+        .map_err(|_| "AI cancellation lock is unavailable".to_string())?;
+    *guard = Some(flag.clone());
+    drop(guard);
+    Ok((
+        flag.clone(),
+        ActiveCancelGuard {
+            slot: Arc::clone(slot),
+            flag,
+        },
+    ))
+}
+
+#[tauri::command]
+fn cancel_ai_request(state: State<'_, AppState>) -> CommandResult<bool> {
+    let guard = state
+        .active_cancel
+        .lock()
+        .map_err(|_| "AI cancellation lock is unavailable".to_string())?;
+    if let Some(flag) = guard.as_ref() {
+        flag.cancel();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
 }
 
 #[tauri::command]
@@ -172,8 +223,11 @@ async fn copilot_status(app: AppHandle) -> CopilotStatus {
 }
 
 #[tauri::command]
-async fn copilot_login(app: AppHandle) -> CommandResult<()> {
-    tauri::async_runtime::spawn_blocking(move || login_to_copilot(&app))
+async fn copilot_login(app: AppHandle, state: State<'_, AppState>) -> CommandResult<()> {
+    let generation_lock = state.generation_lock.clone();
+    let _guard = generation_lock.lock().await;
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
+    tauri::async_runtime::spawn_blocking(move || login_to_copilot(&app, &cancel))
         .await
         .map_err(|error| format!("GitHub Copilot login worker failed: {error}"))?
 }
@@ -189,9 +243,12 @@ async fn generate_resume(
     validate_resume(&resume)?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
-    tauri::async_runtime::spawn_blocking(move || generate_resume_with_provider(&app, &resume))
-        .await
-        .map_err(|error| format!("Resume generation worker failed: {error}"))?
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        generate_resume_with_provider(&app, &resume, &cancel)
+    })
+    .await
+    .map_err(|error| format!("Resume generation worker failed: {error}"))?
 }
 
 #[tauri::command]
@@ -205,8 +262,9 @@ async fn generate_summary_options(
     validate_resume(&resume)?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
     tauri::async_runtime::spawn_blocking(move || {
-        generate_summary_options_with_provider(&app, &resume)
+        generate_summary_options_with_provider(&app, &resume, &cancel)
     })
     .await
     .map_err(|error| format!("Summary options worker failed: {error}"))?
@@ -225,8 +283,9 @@ async fn tailor_experience_role(
     validate_nonempty_text("entryId", &entry_id, MAX_ID_BYTES)?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
     tauri::async_runtime::spawn_blocking(move || {
-        tailor_experience_role_with_provider(&app, &resume, &entry_id)
+        tailor_experience_role_with_provider(&app, &resume, &entry_id, &cancel)
     })
     .await
     .map_err(|error| format!("Role tailoring worker failed: {error}"))?
@@ -243,8 +302,9 @@ async fn structure_imported_resume(
     validate_redacted_import_lines(&redacted_lines)?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
     tauri::async_runtime::spawn_blocking(move || {
-        structure_imported_resume_with_provider(&app, &redacted_lines)
+        structure_imported_resume_with_provider(&app, &redacted_lines, &cancel)
     })
     .await
     .map_err(|error| format!("Import cleanup worker failed: {error}"))?
@@ -275,8 +335,9 @@ async fn analyze_accomplishment(
     validate_apr_target(&target)?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
     tauri::async_runtime::spawn_blocking(move || {
-        analyze_accomplishment_with_provider(&app, &target)
+        analyze_accomplishment_with_provider(&app, &target, &cancel)
     })
     .await
     .map_err(|error| format!("Accomplishment analysis worker failed: {error}"))?
@@ -296,8 +357,9 @@ async fn refine_accomplishment(
     validate_apr_question_answers(&questions, &answers)?;
     let generation_lock = state.generation_lock.clone();
     let _guard = generation_lock.lock().await;
+    let (cancel, _cancel_guard) = begin_cancellable_ai_run(&state.active_cancel)?;
     tauri::async_runtime::spawn_blocking(move || {
-        refine_accomplishment_with_provider(&app, &target, &questions, &answers)
+        refine_accomplishment_with_provider(&app, &target, &questions, &answers, &cancel)
     })
     .await
     .map_err(|error| format!("Accomplishment refinement worker failed: {error}"))?
@@ -316,6 +378,7 @@ pub fn run() {
             save_ai_settings,
             set_provider_api_key,
             clear_provider_api_key,
+            cancel_ai_request,
             copilot_status,
             copilot_login,
             generate_resume,
