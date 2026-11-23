@@ -1,22 +1,46 @@
 import { describe, expect, it } from "vitest";
+import { auditResume } from "./audit";
+import { computeWordDiff } from "./diff";
+import { createDocxBytes } from "./docxExport";
 import {
-  applyAprOption,
+  addKeywordToSkills,
+  applyAprRewrite,
+  applyPartialProposal,
   applyProposal,
+  applyRoleTailorProposal,
+  buildTailoredResumeFromLibrary,
+  countPdfPages,
   createResume,
+  defaultProposalSelection,
   documentFilename,
   exampleResume,
   formatYearMonth,
   initialWorkspace,
+  isExperienceOutOfSync,
   jobKeywords,
   MAX_WORKSPACE_BYTES,
+  mergeAiImportedStructure,
+  normalizeAprAnswers,
+  normalizeExternalUrl,
   parseWorkspace,
+  pullExperienceFromLibrary,
+  restoreJobKeyword,
   resumeReadiness,
+  skipJobKeyword,
+  syncResumeToCareerLibrary,
   validateProposal,
   validateAprAnalysis,
+  validateAprQuestionAnswers,
+  validateAprRefinement,
   validateAprTarget,
-  validateHighlightReviews,
-  type Resume,
+  WORKSPACE_VERSION,
 } from "./model";
+import {
+  extractDocxLines,
+  parseResumeLinesToDraft,
+  redactImportLinesForAi,
+} from "./resumeImport";
+import { loadUiPreferences, saveUiPreferences } from "./uiPreferences";
 
 describe("workspace validation", () => {
   it("round trips a workspace and keeps empty resumes valid", () => {
@@ -24,38 +48,40 @@ describe("workspace validation", () => {
     expect(parseWorkspace(JSON.stringify(workspace))).toEqual(workspace);
   });
 
-  it("migrates version-1 workspaces without losing the job description", () => {
-    const resume = createResume();
-    const legacyResume = {
-      ...resume,
-      jobDescription: "Build reliable distributed systems.",
+  it("upgrades version-1 workspaces created before v2 fields existed", () => {
+    const legacyV1 = {
+      version: 1,
+      activeResumeId: "legacy-1",
+      resumes: [
+        {
+          id: "legacy-1",
+          title: "Legacy Resume",
+          updatedAt: "2026-09-15T00:00:00.000Z",
+          basics: {
+            name: "Alex",
+            headline: "Designer",
+            email: "alex@example.com",
+            phone: "",
+            location: "Remote",
+            website: "",
+          },
+          summary: "Thoughtful product designer.",
+          experience: [],
+          education: [],
+          skills: ["Figma"],
+          jobDescription: "",
+          template: "editorial",
+          accent: "teal",
+        },
+      ],
     };
-    delete (legacyResume.basics as Partial<Resume["basics"]>).github;
-    for (const key of [
-      "targetJob",
-      "projects",
-      "certifications",
-      "awards",
-      "volunteer",
-      "publications",
-      "languages",
-      "additionalSectionOrder",
-    ] as const) {
-      delete (legacyResume as Partial<Resume>)[key];
-    }
-    const migrated = parseWorkspace(
-      JSON.stringify({
-        version: 1,
-        activeResumeId: resume.id,
-        resumes: [legacyResume],
-      }),
-    );
-    expect(migrated.version).toBe(2);
+    const migrated = parseWorkspace(JSON.stringify(legacyV1));
+    expect(migrated.version).toBe(WORKSPACE_VERSION);
     expect(migrated.resumes[0].basics.github).toBe("");
-    expect(migrated.resumes[0].targetJob.description).toBe(
-      "Build reliable distributed systems.",
-    );
+    expect(migrated.resumes[0].pageSize).toBe("a4");
+    expect(migrated.resumes[0].density).toBe("standard");
     expect(migrated.resumes[0].projects).toEqual([]);
+    expect(migrated.careerLibrary.experiences).toEqual([]);
   });
 
   it("rejects corrupt data, future versions, missing selections, and duplicate IDs", () => {
@@ -88,7 +114,7 @@ describe("workspace validation", () => {
   it("rejects duplicate entries and unknown fields", () => {
     const resume = exampleResume();
     const workspace = {
-      version: 2,
+      version: 1,
       activeResumeId: resume.id,
       resumes: [resume],
     };
@@ -101,36 +127,6 @@ describe("workspace validation", () => {
         JSON.stringify({ ...initialWorkspace(), token: "not-supported" }),
       ),
     ).toThrow();
-  });
-
-  it("validates new section IDs and the complete section order", () => {
-    const workspace = initialWorkspace();
-    const resume = workspace.resumes[0];
-    const project = {
-      id: "project-1",
-      name: "Portfolio",
-      role: "Designer",
-      url: "",
-      startDate: "",
-      endDate: "",
-      bullets: [],
-    };
-    resume.projects = [project, project];
-    expect(() => parseWorkspace(JSON.stringify(workspace))).toThrow(
-      "Duplicate projects",
-    );
-    resume.projects = [];
-    resume.additionalSectionOrder = [
-      "projects",
-      "projects",
-      "awards",
-      "volunteer",
-      "publications",
-      "languages",
-    ];
-    expect(() => parseWorkspace(JSON.stringify(workspace))).toThrow(
-      "every section once",
-    );
   });
 });
 
@@ -157,42 +153,7 @@ describe("AI proposals", () => {
   });
 
   describe("APR accomplishment analysis", () => {
-    const coreResult = (target: {
-      resumeId: string;
-      experienceId: string;
-      bulletIndex: number;
-      role: string;
-      bullet: string;
-    }) => ({
-      target,
-      action: { status: "clear" as const, feedback: "Specific action." },
-      project: { status: "partial" as const, feedback: "Add context." },
-      result: {
-        status: "missing" as const,
-        feedback: "Add supported impact.",
-      },
-      options: [
-        {
-          id: "concise" as const,
-          bullets: ["Led a focused onboarding redesign."],
-        },
-        {
-          id: "detail-forward" as const,
-          bullets: [
-            "Led a customer onboarding redesign through research, prototyping, and usability testing.",
-          ],
-        },
-        {
-          id: "split" as const,
-          bullets: [
-            "Led a customer onboarding redesign.",
-            "Validated the redesigned flow through usability testing.",
-          ],
-        },
-      ],
-    });
-
-    it("validates exact targets and atomically applies unified and split options", () => {
+    it("validates exact targets and applies only the selected bullet", () => {
       const resume = exampleResume();
       const target = {
         resumeId: resume.id,
@@ -202,36 +163,21 @@ describe("AI proposals", () => {
         bullet: resume.experience[0].bullets[1],
       };
       expect(validateAprTarget(target, resume)).toEqual(target);
-      const unified = applyAprOption(resume, target, {
-        id: "concise",
-        bullets: [
-          "Built a shared, accessible design system with engineering partners.",
-        ],
-      });
-      expect(unified.experience[0].bullets[1]).toContain("accessible");
-      const split = applyAprOption(resume, target, {
-        id: "split",
-        bullets: [
-          "Built a shared design system.",
-          "Partnered with engineering.",
-        ],
-      });
-      expect(split.experience[0].bullets.slice(1, 3)).toEqual([
-        "Built a shared design system.",
-        "Partnered with engineering.",
-      ]);
-      expect(split.experience[0].bullets[3]).toBe(
-        resume.experience[0].bullets[2],
+      const updated = applyAprRewrite(
+        resume,
+        target,
+        "Built a shared, accessible design system with engineering partners.",
       );
-      expect(split.experience[0].bullets[0]).toBe(
+      expect(updated.experience[0].bullets[1]).toContain("accessible");
+      expect(updated.experience[0].bullets[0]).toBe(
         resume.experience[0].bullets[0],
       );
-      expect(split.experience[1]).toEqual(resume.experience[1]);
-      expect(split.basics).toEqual(resume.basics);
-      expect(split.summary).toBe(resume.summary);
+      expect(updated.experience[1]).toEqual(resume.experience[1]);
+      expect(updated.basics).toEqual(resume.basics);
+      expect(updated.summary).toBe(resume.summary);
     });
 
-    it("accepts only bounded canonical fact groups and option strategies", () => {
+    it("rejects stale, malformed, oversized, and mismatched APR data", () => {
       const resume = exampleResume();
       const target = {
         resumeId: resume.id,
@@ -240,8 +186,25 @@ describe("AI proposals", () => {
         role: resume.experience[0].role,
         bullet: resume.experience[0].bullets[0],
       };
-      const analysis = coreResult(target);
+      const analysis = {
+        target,
+        action: { status: "clear" as const, feedback: "Specific action." },
+        project: { status: "partial" as const, feedback: "Add context." },
+        result: {
+          status: "missing" as const,
+          feedback: "Add supported impact.",
+        },
+        rewrite: "Led a focused onboarding redesign.",
+        questions: ["What changed after the redesign?"],
+      };
       expect(validateAprAnalysis(analysis, target)).toEqual(analysis);
+      const analysisWithoutRewrite: Omit<typeof analysis, "rewrite"> & {
+        rewrite?: string;
+      } = { ...analysis };
+      delete analysisWithoutRewrite.rewrite;
+      expect(
+        validateAprAnalysis(analysisWithoutRewrite, target).rewrite,
+      ).toBeUndefined();
       expect(() =>
         validateAprAnalysis(
           { ...analysis, target: { ...target, bulletIndex: 1 } },
@@ -251,176 +214,139 @@ describe("AI proposals", () => {
       expect(() =>
         validateAprAnalysis({ ...analysis, invented: true }, target),
       ).toThrow();
-      expect(
-        validateAprAnalysis(
-          { ...analysis, options: [analysis.options[0]] },
-          target,
-        ).options,
-      ).toEqual([analysis.options[0]]);
-      expect(
-        validateAprAnalysis(
-          { ...analysis, options: [analysis.options[1]] },
-          target,
-        ).options,
-      ).toEqual([analysis.options[1]]);
-      expect(() =>
-        validateAprAnalysis({ ...analysis, options: [] }, target),
-      ).toThrow();
       expect(() =>
         validateAprAnalysis(
-          {
-            ...analysis,
-            options: [analysis.options[1], analysis.options[0]],
-          },
-          target,
-        ),
-      ).toThrow("canonical");
-      expect(() =>
-        validateAprAnalysis(
-          {
-            ...analysis,
-            options: [
-              analysis.options[0],
-              { id: "split", bullets: ["Only one."] },
-            ],
-          },
-          target,
-        ),
-      ).toThrow("exactly 2");
-      expect(() =>
-        validateAprAnalysis(
-          {
-            ...analysis,
-            options: [
-              { id: "concise", bullets: ["Same rewrite."] },
-              { id: "detail-forward", bullets: ["Same rewrite."] },
-            ],
-          },
-          target,
-        ),
-      ).toThrow("distinct");
-      expect(() =>
-        validateAprAnalysis(
-          { ...analysis, questions: ["What changed?"] },
+          { ...analysis, questions: Array(6).fill("Question?") },
           target,
         ),
       ).toThrow();
       expect(() =>
         validateAprAnalysis(
-          {
-            ...analysis,
-            options: [
-              { id: "concise", bullets: [target.bullet] },
-              analysis.options[1],
-            ],
-          },
+          { ...analysis, questions: ["Duplicate?", "Duplicate?"] },
           target,
         ),
-      ).toThrow("change");
+      ).toThrow("unique");
       expect(() =>
-        validateAprTarget({ ...target, bullet: "é".repeat(1_001) }, resume),
+        validateAprTarget({ ...target, bullet: "x".repeat(2_001) }, resume),
       ).toThrow();
-      expect(() =>
-        applyAprOption(resume, target, {
-          id: "concise",
-          bullets: [target.bullet],
-        }),
-      ).toThrow("changed");
+      expect(() => applyAprRewrite(resume, target, target.bullet)).toThrow(
+        "changed",
+      );
       expect(() =>
         validateAprTarget({ ...target, role: "Changed role" }, resume),
       ).toThrow("no longer matches");
     });
 
-    it("rejects split options that exceed the experience highlight cap", () => {
-      const capped = exampleResume();
-      capped.experience[0].bullets = Array(30).fill("Existing.");
-      const cappedTarget = {
-        resumeId: capped.id,
-        experienceId: capped.experience[0].id,
+    it("normalizes ordered nonblank APR answers and validates refinement echoes", () => {
+      const resume = exampleResume();
+      const target = {
+        resumeId: resume.id,
+        experienceId: resume.experience[0].id,
         bulletIndex: 0,
-        role: capped.experience[0].role,
-        bullet: "Existing.",
+        role: resume.experience[0].role,
+        bullet: resume.experience[0].bullets[0],
       };
-      expect(() =>
-        applyAprOption(capped, cappedTarget, {
-          id: "split",
-          bullets: ["First.", "Second."],
-        }),
-      ).toThrow("30-highlight");
+      const questions = ["What changed?", "Who benefited?", "How was it done?"];
+      const answers = normalizeAprAnswers(questions, [
+        "  Faster onboarding.  ",
+        "",
+        " With usability tests. ",
+      ]);
+      expect(answers).toEqual([
+        { question: questions[0], answer: "Faster onboarding." },
+        { question: questions[2], answer: "With usability tests." },
+      ]);
+      expect(validateAprQuestionAnswers(questions, answers)).toEqual(answers);
+      const refinement = {
+        target,
+        answers,
+        rewrite:
+          "Led an onboarding redesign validated through usability testing.",
+      };
+      expect(validateAprRefinement(refinement, target, answers)).toEqual(
+        refinement,
+      );
     });
 
-    it("binds batch highlight reviews to the exact requested highlights", () => {
+    it("rejects invalid APR answer binding, limits, and refinement data", () => {
       const resume = exampleResume();
-      const targets = resume.experience.flatMap((entry) =>
-        entry.bullets.map((bullet, bulletIndex) => ({
-          resumeId: resume.id,
-          experienceId: entry.id,
-          bulletIndex,
-          role: entry.role,
-          bullet,
-        })),
-      );
-      const reviews = targets.map((target, index) => ({
-        target,
-        action: index % 2 === 0 ? ("clear" as const) : ("partial" as const),
-        project: "partial" as const,
-        result: "missing" as const,
-      }));
-
-      expect(validateHighlightReviews(reviews, targets)).toEqual(reviews);
-
-      // Diagnosis only: rewrite text, feedback prose and unknown keys are rejected.
+      const target = {
+        resumeId: resume.id,
+        experienceId: resume.experience[0].id,
+        bulletIndex: 0,
+        role: resume.experience[0].role,
+        bullet: resume.experience[0].bullets[0],
+      };
+      const questions = ["First?", "Second?"];
+      expect(() => normalizeAprAnswers(questions, [""])).toThrow("match");
       expect(() =>
-        validateHighlightReviews(
-          [
-            { ...reviews[0], feedback: "Add supported impact." },
-            ...reviews.slice(1),
-          ],
-          targets,
+        normalizeAprAnswers(["Duplicate?", "Duplicate?"], ["a", "b"]),
+      ).toThrow("unique");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "Second?", answer: "two" },
+          { question: "First?", answer: "one" },
+        ]),
+      ).toThrow("display order");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "First?", answer: "one" },
+          { question: "First?", answer: "again" },
+        ]),
+      ).toThrow("duplicated");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "Unknown?", answer: "one" },
+        ]),
+      ).toThrow("unknown");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "First?", answer: " untrimmed " },
+        ]),
+      ).toThrow("trimmed");
+      expect(() =>
+        validateAprQuestionAnswers(questions, [
+          { question: "First?", answer: "x".repeat(2_001) },
+        ]),
+      ).toThrow();
+      expect(() => validateAprQuestionAnswers(questions, [])).toThrow();
+      const answers = [{ question: "First?", answer: "one" }];
+      expect(() =>
+        validateAprRefinement(
+          { target, answers, rewrite: target.bullet },
+          target,
+          answers,
+        ),
+      ).toThrow("changed");
+      expect(() =>
+        validateAprRefinement(
+          {
+            target: { ...target, bulletIndex: 1 },
+            answers,
+            rewrite: "Changed.",
+          },
+          target,
+          answers,
+        ),
+      ).toThrow("different accomplishment");
+      expect(() =>
+        validateAprRefinement(
+          {
+            target,
+            answers: [{ question: "First?", answer: "other" }],
+            rewrite: "Changed.",
+          },
+          target,
+          answers,
+        ),
+      ).toThrow("different answers");
+      expect(() =>
+        validateAprRefinement(
+          { target, answers, rewrite: "Changed.", extra: true },
+          target,
+          answers,
         ),
       ).toThrow();
-      expect(() =>
-        validateHighlightReviews(
-          [
-            {
-              ...reviews[0],
-              options: [{ id: "concise", bullets: ["A rewrite."] }],
-            },
-            ...reviews.slice(1),
-          ],
-          targets,
-        ),
-      ).toThrow();
-      expect(() =>
-        validateHighlightReviews(
-          [{ ...reviews[0], action: "strong" }, ...reviews.slice(1)],
-          targets,
-        ),
-      ).toThrow();
-
-      // Count and per-highlight identity mismatches are refused, never guessed.
-      expect(() => validateHighlightReviews(reviews.slice(1), targets)).toThrow(
-        "different highlights",
-      );
-      expect(() =>
-        validateHighlightReviews([...reviews, reviews[0]], targets),
-      ).toThrow("different highlights");
-      expect(() =>
-        validateHighlightReviews(
-          [
-            {
-              ...reviews[0],
-              target: { ...targets[0], bullet: "An edited highlight." },
-            },
-            ...reviews.slice(1),
-          ],
-          targets,
-        ),
-      ).toThrow("different highlights");
-      expect(() =>
-        validateHighlightReviews([...reviews].reverse(), targets),
-      ).toThrow("different highlights");
-      expect(validateHighlightReviews([], [])).toEqual([]);
     });
   });
 
@@ -468,7 +394,7 @@ describe("local feedback", () => {
 
   it("does not match partial technical terms or the job description against itself", () => {
     const resume = createResume();
-    resume.targetJob.description =
+    resume.jobDescription =
       "Java, JavaScript, C++, C#, .NET and React experience.";
     resume.skills = ["JavaScript", "C++"];
     const keywords = jobKeywords(resume);
@@ -492,7 +418,350 @@ describe("local feedback", () => {
 
   it("creates safe, bounded export filenames", () => {
     expect(documentFilename("../../my:resume", "pdf")).toBe("my-resume.pdf");
+    expect(documentFilename("My Resume", "docx")).toBe("My-Resume.docx");
     expect(documentFilename("你好", "pdf")).toBe("hireloom-resume.pdf");
     expect(documentFilename("x".repeat(300), "json").length).toBe(75);
+  });
+
+  it("extracts dynamic job keywords and supports skip, restore, and add-skill triage", () => {
+    let resume = exampleResume();
+    resume.jobDescription =
+      "Seeking a Senior Engineer with experience in FastAPI, GraphQL, Kubernetes, and Figma.";
+    const initial = jobKeywords(resume);
+    expect(initial.find((k) => k.term === "figma")?.matched).toBe(true);
+    expect(initial.find((k) => k.term === "fastapi")?.matched).toBe(false);
+    expect(initial.find((k) => k.term === "graphql")?.matched).toBe(false);
+
+    resume = skipJobKeyword(resume, "Kubernetes");
+    expect(
+      jobKeywords(resume).find((k) => k.term === "kubernetes")?.skipped,
+    ).toBe(true);
+
+    resume = restoreJobKeyword(resume, "kubernetes");
+    expect(
+      jobKeywords(resume).find((k) => k.term === "kubernetes")?.skipped,
+    ).toBe(false);
+
+    resume = addKeywordToSkills(resume, "FastAPI");
+    expect(jobKeywords(resume).find((k) => k.term === "fastapi")?.matched).toBe(
+      true,
+    );
+  });
+
+  it("supports per-bullet selective AI proposal application and word diffs", () => {
+    const resume = exampleResume();
+    const proposal = {
+      summary: "Updated summary.",
+      experience: resume.experience.map((entry, idx) => ({
+        id: entry.id,
+        bullets: entry.bullets.map(
+          (b, bIdx) => `Polished ${idx}.${bIdx}: ${b}`,
+        ),
+      })),
+      projects: [],
+      notes: [],
+    };
+    const selection = defaultProposalSelection(resume, proposal);
+    selection.summary = false;
+    selection.experienceBullets[resume.experience[0].id][0] = false;
+
+    const updated = applyPartialProposal(resume, proposal, selection);
+    expect(updated.summary).toBe(resume.summary);
+    expect(updated.experience[0].bullets[0]).toBe(
+      resume.experience[0].bullets[0],
+    );
+    expect(updated.experience[0].bullets[1]).toContain("Polished 0.1:");
+
+    const diff = computeWordDiff("Built a tool", "Architected a local tool");
+    expect(
+      diff.some((s) => s.kind === "removed" && s.text.includes("Built")),
+    ).toBe(true);
+    expect(diff.some((s) => s.kind === "added")).toBe(true);
+  });
+
+  it("runs deterministic resume quality checks without manufacturing fake scores", () => {
+    const weak = createResume();
+    weak.basics.name = "Casey";
+    weak.basics.email = "casey@example.com";
+    weak.experience = [
+      {
+        id: "exp-1",
+        role: "Engineer",
+        company: "Acme",
+        location: "Remote",
+        startDate: "2024-06",
+        endDate: "2023-01",
+        bullets: ["Responsible for backend tasks."],
+      },
+    ];
+    const report = auditResume(weak);
+    expect(
+      report.items.find((i) => i.id === "strong-action-verbs")?.status,
+    ).toBe("warn");
+    expect(report.items.find((i) => i.id === "date-consistency")?.status).toBe(
+      "warn",
+    );
+  });
+
+  it("syncs items to Career Library, detects drift, pulls updates, and builds variants", () => {
+    let workspace = initialWorkspace();
+    const resume = {
+      ...exampleResume(),
+      id: workspace.activeResumeId,
+      projects: [
+        {
+          id: "proj-1",
+          name: "Hireloom",
+          subtitle: "Creator",
+          url: "github.com/jinloes/hireloom",
+          startDate: "2025-01",
+          endDate: "Present",
+          bullets: ["Built local-first resume studio."],
+        },
+      ],
+    };
+    workspace = { ...workspace, resumes: [resume] };
+    workspace = syncResumeToCareerLibrary(workspace, resume.id);
+    expect(workspace.careerLibrary.experiences).toHaveLength(2);
+    expect(workspace.careerLibrary.projects).toHaveLength(1);
+
+    const linkedExp = workspace.resumes[0].experience[0];
+    expect(linkedExp.libraryId).toBeDefined();
+    expect(isExperienceOutOfSync(linkedExp, workspace.careerLibrary)).toBe(
+      false,
+    );
+
+    const edited = { ...linkedExp, role: "Principal Product Designer" };
+    expect(isExperienceOutOfSync(edited, workspace.careerLibrary)).toBe(true);
+
+    const restored = pullExperienceFromLibrary(
+      {
+        ...workspace.resumes[0],
+        experience: [edited, workspace.resumes[0].experience[1]],
+      },
+      edited.id,
+      workspace.careerLibrary,
+    );
+    expect(restored.experience[0].role).toBe("Senior Product Designer");
+
+    const variant = buildTailoredResumeFromLibrary({
+      baseResume: workspace.resumes[0],
+      library: workspace.careerLibrary,
+      title: "Focused Design Variant",
+      experienceIds: [workspace.careerLibrary.experiences[0].id],
+      projectIds: [workspace.careerLibrary.projects[0].id],
+      educationIds: [workspace.careerLibrary.education[0].id],
+      certificationIds: [],
+      skillGroupIds: [],
+      jobDescription: "Staff Product Designer with Figma",
+    });
+    expect(variant.experience).toHaveLength(1);
+    expect(variant.projects).toHaveLength(1);
+    expect(variant.title).toBe("Focused Design Variant");
+  });
+
+  it("exports valid DOCX archives and imports DOCX resume content locally", async () => {
+    const source = exampleResume();
+    source.projects = [
+      {
+        id: "proj-docx",
+        name: "Design System Kit",
+        subtitle: "Maintainer · Figma, React",
+        url: "",
+        startDate: "2023-03",
+        endDate: "Present",
+        bullets: ["Adopted across 4 product squads."],
+      },
+    ];
+    source.skillGroups = [
+      {
+        id: "sg-1",
+        category: "Design",
+        items: ["Figma", "Prototyping", "Accessibility"],
+      },
+    ];
+    source.pageSize = "letter";
+    source.density = "compact";
+
+    const bytes = await createDocxBytes(source);
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
+
+    const lines = await extractDocxLines(bytes);
+    const imported = parseResumeLinesToDraft(
+      lines,
+      "Alex_Morgan_Resume.docx",
+      "docx",
+    );
+    expect(imported.resume.basics.name).toBe("Alex Morgan");
+    expect(imported.resume.basics.email).toBe("alex@example.com");
+    expect(imported.resume.experience.length).toBeGreaterThanOrEqual(2);
+    expect(imported.resume.projects).toHaveLength(1);
+    expect(imported.resume.education).toHaveLength(1);
+    expect(
+      imported.resume.skillGroups.some((g) => g.category === "Design"),
+    ).toBe(true);
+  });
+
+  it("redacts contact PII before AI import cleanup and preserves local contact fields on merge", () => {
+    const rawLines = [
+      "Alex Morgan",
+      "alex.morgan@example.com | (555) 234-5678 | https://linkedin.com/in/alex-morgan | github.com/alexm",
+      "Senior Engineer · Acme Corp · 2023-01 – Present",
+      "• Built distributed Rust services.",
+    ];
+    const redacted = redactImportLinesForAi(rawLines);
+    expect(redacted.join("\n")).not.toContain("alex.morgan@example.com");
+    expect(redacted.join("\n")).not.toContain("234-5678");
+    expect(redacted.join("\n")).not.toContain("linkedin.com");
+    expect(redacted.join("\n")).not.toContain("github.com");
+    expect(redacted[1]).toContain("[REDACTED_EMAIL]");
+    expect(redacted[1]).toContain("[REDACTED_PHONE]");
+    expect(redacted[1]).toContain("[REDACTED_URL]");
+
+    const base = createResume();
+    base.basics.name = "Alex Morgan";
+    base.basics.email = "alex.morgan@example.com";
+    base.basics.phone = "555-234-5678";
+    base.basics.website = "https://linkedin.com/in/alex-morgan";
+    base.basics.github = "https://github.com/alexm";
+
+    const merged = mergeAiImportedStructure(base, {
+      headline: "Senior Systems Engineer",
+      summary: "Distributed systems specialist.",
+      experience: [
+        {
+          role: "Senior Engineer",
+          company: "Acme Corp",
+          location: "Remote",
+          startDate: "2023-01",
+          endDate: "Present",
+          bullets: ["Built distributed Rust services."],
+        },
+      ],
+      projects: [],
+      education: [],
+      certifications: [],
+      skillGroups: [{ category: "Languages", items: ["Rust", "TypeScript"] }],
+      skills: ["gRPC"],
+    });
+    expect(merged.basics.email).toBe("alex.morgan@example.com");
+    expect(merged.basics.phone).toBe("555-234-5678");
+    expect(merged.basics.website).toBe("https://linkedin.com/in/alex-morgan");
+    expect(merged.basics.github).toBe("https://github.com/alexm");
+    expect(merged.basics.headline).toBe("Senior Systems Engineer");
+    expect(merged.experience[0].role).toBe("Senior Engineer");
+    expect(merged.skillGroups[0].items).toEqual(["Rust", "TypeScript"]);
+  });
+
+  it("supports single-role tailoring and per-bullet Career Library cherry-picking", () => {
+    const resume = exampleResume();
+    const targetExp = resume.experience[0];
+    const roleUpdated = applyRoleTailorProposal(
+      resume,
+      {
+        entryId: targetExp.id,
+        bullets: targetExp.bullets.map((b, i) => `Tailored ${i}: ${b}`),
+        notes: [],
+      },
+      [true, false, true],
+    );
+    expect(roleUpdated.experience[0].bullets[0]).toContain("Tailored 0:");
+    expect(roleUpdated.experience[0].bullets[1]).toBe(targetExp.bullets[1]);
+    expect(roleUpdated.experience[1].bullets).toEqual(
+      resume.experience[1].bullets,
+    );
+
+    let workspace = initialWorkspace();
+    workspace = syncResumeToCareerLibrary(
+      {
+        ...workspace,
+        resumes: [{ ...resume, id: workspace.activeResumeId }],
+      },
+      workspace.activeResumeId,
+    );
+    const libExp = workspace.careerLibrary.experiences[0];
+    const cherryPicked = buildTailoredResumeFromLibrary({
+      baseResume: workspace.resumes[0],
+      library: workspace.careerLibrary,
+      title: "1-Page Cherry-Picked",
+      experienceIds: [libExp.id],
+      projectIds: [],
+      educationIds: [],
+      certificationIds: [],
+      skillGroupIds: [],
+      selectedExperienceBullets: { [libExp.id]: [1] },
+      jobDescription: "",
+    });
+    expect(cherryPicked.experience).toHaveLength(1);
+    expect(cherryPicked.experience[0].bullets).toEqual([libExp.bullets[1]]);
+  });
+
+  it("normalizes safe external URLs, counts PDF pages, persists UI prefs, and writes DOCX hyperlinks", async () => {
+    expect(normalizeExternalUrl("github.com/alex-morgan")).toBe(
+      "https://github.com/alex-morgan",
+    );
+    expect(normalizeExternalUrl("https://alexmorgan.design/work")).toBe(
+      "https://alexmorgan.design/work",
+    );
+    expect(normalizeExternalUrl("javascript:alert(1)")).toBeNull();
+    expect(normalizeExternalUrl("data:text/html,hello")).toBeNull();
+    expect(normalizeExternalUrl("mailto:alex@example.com")).toBeNull();
+    expect(normalizeExternalUrl("not a url")).toBeNull();
+
+    const fakePdf = new TextEncoder().encode(
+      "%PDF-1.7\n1 0 obj << /Type /Pages /Count 2 >> endobj\n2 0 obj << /Type /Page >> endobj\n3 0 obj << /Type /Page >> endobj",
+    );
+    expect(countPdfPages(fakePdf)).toBe(2);
+
+    window.localStorage.setItem(
+      "hireloom.ui-prefs.v1",
+      JSON.stringify({
+        theme: "dark",
+        editorWidthPct: 95,
+        previewZoom: 125,
+        sidebarCollapsed: true,
+        aiPromoDismissed: true,
+      }),
+    );
+    const clamped = loadUiPreferences();
+    expect(clamped).toEqual({
+      theme: "dark",
+      editorWidthPct: 58,
+      previewZoom: 125,
+      sidebarCollapsed: true,
+      aiPromoDismissed: true,
+    });
+    saveUiPreferences({ ...clamped, editorWidthPct: 10 });
+    expect(loadUiPreferences().editorWidthPct).toBe(28);
+
+    const resume = exampleResume();
+    resume.basics.website = "alexmorgan.design";
+    resume.basics.github = "javascript:alert(1)";
+    resume.projects = [
+      {
+        id: "proj-1",
+        name: "Hireloom",
+        subtitle: "Creator",
+        url: "https://github.com/jinloes/hireloom",
+        startDate: "2024-01",
+        endDate: "Present",
+        bullets: ["Built local-first studio."],
+      },
+    ];
+    resume.certifications = [
+      {
+        id: "cert-1",
+        name: "AWS Solutions Architect",
+        issuer: "Amazon",
+        date: "2024-06",
+        url: "aws.amazon.com/verification",
+      },
+    ];
+    const docxBytes = await createDocxBytes(resume);
+    const ascii = new TextDecoder("latin1").decode(docxBytes);
+    expect(ascii).toContain("word/_rels/document.xml.rels");
+    const lines = await extractDocxLines(docxBytes);
+    expect(lines.join("\n")).toContain("alexmorgan.design");
+    expect(lines.join("\n")).toContain("Hireloom");
   });
 });

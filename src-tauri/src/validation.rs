@@ -1,7 +1,5 @@
-//! Native validation of workspaces, resumes, text fields, AI request targets, and export requests.
-
 use crate::contract::*;
-use std::{collections::HashSet, path::Path};
+use std::collections::HashSet;
 
 pub(crate) fn validate_workspace(workspace: &Workspace) -> CommandResult<()> {
     if workspace.version != WORKSPACE_VERSION {
@@ -28,6 +26,213 @@ pub(crate) fn validate_workspace(workspace: &Workspace) -> CommandResult<()> {
     validate_nonempty_text("activeResumeId", &workspace.active_resume_id, MAX_ID_BYTES)?;
     if !ids.contains(workspace.active_resume_id.as_str()) {
         return Err("Active resume id does not refer to a resume".to_string());
+    }
+    validate_career_library(&workspace.career_library)?;
+    Ok(())
+}
+
+fn validate_optional_id(field: &str, value: &Option<String>) -> CommandResult<()> {
+    if let Some(id) = value {
+        validate_nonempty_text(field, id, MAX_ID_BYTES)?;
+    }
+    Ok(())
+}
+
+fn validate_experience_item(
+    experience: &Experience,
+    allow_library_link: bool,
+) -> CommandResult<()> {
+    validate_nonempty_text("experience id", &experience.id, MAX_ID_BYTES)?;
+    if allow_library_link {
+        validate_optional_id("experience.libraryId", &experience.library_id)?;
+    } else if experience.library_id.is_some() {
+        return Err("Canonical careerLibrary.experiences items cannot set libraryId".to_string());
+    }
+    validate_text("experience.role", &experience.role, MAX_SHORT_TEXT_BYTES)?;
+    validate_text(
+        "experience.company",
+        &experience.company,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text(
+        "experience.location",
+        &experience.location,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text(
+        "experience.startDate",
+        &experience.start_date,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text(
+        "experience.endDate",
+        &experience.end_date,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_bullets(&experience.bullets, "experience.bullets")
+}
+
+fn validate_project_item(project: &Project, allow_library_link: bool) -> CommandResult<()> {
+    validate_nonempty_text("project id", &project.id, MAX_ID_BYTES)?;
+    if allow_library_link {
+        validate_optional_id("project.libraryId", &project.library_id)?;
+    } else if project.library_id.is_some() {
+        return Err("Canonical careerLibrary.projects items cannot set libraryId".to_string());
+    }
+    validate_text("project.name", &project.name, MAX_SHORT_TEXT_BYTES)?;
+    validate_text("project.subtitle", &project.subtitle, MAX_SHORT_TEXT_BYTES)?;
+    validate_text("project.url", &project.url, MAX_SHORT_TEXT_BYTES)?;
+    validate_text(
+        "project.startDate",
+        &project.start_date,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text("project.endDate", &project.end_date, MAX_SHORT_TEXT_BYTES)?;
+    validate_bullets(&project.bullets, "project.bullets")
+}
+
+fn validate_education_item(education: &Education, allow_library_link: bool) -> CommandResult<()> {
+    validate_nonempty_text("education id", &education.id, MAX_ID_BYTES)?;
+    if allow_library_link {
+        validate_optional_id("education.libraryId", &education.library_id)?;
+    } else if education.library_id.is_some() {
+        return Err("Canonical careerLibrary.education items cannot set libraryId".to_string());
+    }
+    validate_text("education.school", &education.school, MAX_SHORT_TEXT_BYTES)?;
+    validate_text("education.degree", &education.degree, MAX_SHORT_TEXT_BYTES)?;
+    validate_text(
+        "education.graduation",
+        &education.graduation,
+        MAX_SHORT_TEXT_BYTES,
+    )
+}
+
+fn validate_certification_item(
+    certification: &Certification,
+    allow_library_link: bool,
+) -> CommandResult<()> {
+    validate_nonempty_text("certification id", &certification.id, MAX_ID_BYTES)?;
+    if allow_library_link {
+        validate_optional_id("certification.libraryId", &certification.library_id)?;
+    } else if certification.library_id.is_some() {
+        return Err(
+            "Canonical careerLibrary.certifications items cannot set libraryId".to_string(),
+        );
+    }
+    validate_text(
+        "certification.name",
+        &certification.name,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text(
+        "certification.issuer",
+        &certification.issuer,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text(
+        "certification.date",
+        &certification.date,
+        MAX_SHORT_TEXT_BYTES,
+    )?;
+    validate_text(
+        "certification.url",
+        &certification.url,
+        MAX_SHORT_TEXT_BYTES,
+    )
+}
+
+fn validate_skill_group_item(group: &SkillGroup, allow_library_link: bool) -> CommandResult<()> {
+    validate_nonempty_text("skillGroup id", &group.id, MAX_ID_BYTES)?;
+    if allow_library_link {
+        validate_optional_id("skillGroup.libraryId", &group.library_id)?;
+    } else if group.library_id.is_some() {
+        return Err("Canonical careerLibrary.skillGroups items cannot set libraryId".to_string());
+    }
+    validate_text("skillGroup.category", &group.category, MAX_SHORT_TEXT_BYTES)?;
+    if group.items.len() > MAX_SKILLS_PER_GROUP {
+        return Err(format!(
+            "A skill group may contain at most {MAX_SKILLS_PER_GROUP} skills"
+        ));
+    }
+    for item in &group.items {
+        validate_text("skillGroup.item", item, 100)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_career_library(library: &CareerLibrary) -> CommandResult<()> {
+    if library.experiences.len() > MAX_LIBRARY_EXPERIENCES {
+        return Err(format!(
+            "Career Library may contain at most {MAX_LIBRARY_EXPERIENCES} experiences"
+        ));
+    }
+    let mut exp_ids = HashSet::with_capacity(library.experiences.len());
+    for item in &library.experiences {
+        if !exp_ids.insert(item.id.as_str()) {
+            return Err(format!(
+                "Duplicate careerLibrary experience id: {}",
+                item.id
+            ));
+        }
+        validate_experience_item(item, false)?;
+    }
+
+    if library.projects.len() > MAX_LIBRARY_PROJECTS {
+        return Err(format!(
+            "Career Library may contain at most {MAX_LIBRARY_PROJECTS} projects"
+        ));
+    }
+    let mut proj_ids = HashSet::with_capacity(library.projects.len());
+    for item in &library.projects {
+        if !proj_ids.insert(item.id.as_str()) {
+            return Err(format!("Duplicate careerLibrary project id: {}", item.id));
+        }
+        validate_project_item(item, false)?;
+    }
+
+    if library.education.len() > MAX_LIBRARY_EDUCATION {
+        return Err(format!(
+            "Career Library may contain at most {MAX_LIBRARY_EDUCATION} education entries"
+        ));
+    }
+    let mut edu_ids = HashSet::with_capacity(library.education.len());
+    for item in &library.education {
+        if !edu_ids.insert(item.id.as_str()) {
+            return Err(format!("Duplicate careerLibrary education id: {}", item.id));
+        }
+        validate_education_item(item, false)?;
+    }
+
+    if library.certifications.len() > MAX_LIBRARY_CERTIFICATIONS {
+        return Err(format!(
+            "Career Library may contain at most {MAX_LIBRARY_CERTIFICATIONS} certifications"
+        ));
+    }
+    let mut cert_ids = HashSet::with_capacity(library.certifications.len());
+    for item in &library.certifications {
+        if !cert_ids.insert(item.id.as_str()) {
+            return Err(format!(
+                "Duplicate careerLibrary certification id: {}",
+                item.id
+            ));
+        }
+        validate_certification_item(item, false)?;
+    }
+
+    if library.skill_groups.len() > MAX_LIBRARY_SKILL_GROUPS {
+        return Err(format!(
+            "Career Library may contain at most {MAX_LIBRARY_SKILL_GROUPS} skill groups"
+        ));
+    }
+    let mut sg_ids = HashSet::with_capacity(library.skill_groups.len());
+    for item in &library.skill_groups {
+        if !sg_ids.insert(item.id.as_str()) {
+            return Err(format!(
+                "Duplicate careerLibrary skillGroup id: {}",
+                item.id
+            ));
+        }
+        validate_skill_group_item(item, false)?;
     }
     Ok(())
 }
@@ -57,28 +262,10 @@ pub(crate) fn validate_resume(resume: &Resume) -> CommandResult<()> {
     validate_text("basics.github", &resume.basics.github, MAX_SHORT_TEXT_BYTES)?;
     validate_text("summary", &resume.summary, MAX_SUMMARY_BYTES)?;
     validate_text(
-        "targetJob.title",
-        &resume.target_job.title,
-        MAX_SHORT_TEXT_BYTES,
-    )?;
-    validate_text(
-        "targetJob.company",
-        &resume.target_job.company,
-        MAX_SHORT_TEXT_BYTES,
-    )?;
-    validate_text(
-        "targetJob.sourceUrl",
-        &resume.target_job.source_url,
-        MAX_SHORT_TEXT_BYTES,
-    )?;
-    validate_text(
-        "targetJob.description",
-        &resume.target_job.description,
+        "jobDescription",
+        &resume.job_description,
         MAX_JOB_DESCRIPTION_BYTES,
     )?;
-    if resume.legacy_job_description.is_some() {
-        return Err("Version 2 workspaces must not contain jobDescription".to_string());
-    }
 
     if resume.experience.len() > MAX_EXPERIENCE {
         return Err(format!(
@@ -87,32 +274,23 @@ pub(crate) fn validate_resume(resume: &Resume) -> CommandResult<()> {
     }
     let mut experience_ids = HashSet::with_capacity(resume.experience.len());
     for experience in &resume.experience {
-        validate_nonempty_text("experience id", &experience.id, MAX_ID_BYTES)?;
         if !experience_ids.insert(experience.id.as_str()) {
             return Err(format!("Duplicate experience id: {}", experience.id));
         }
-        validate_text("experience.role", &experience.role, MAX_SHORT_TEXT_BYTES)?;
-        validate_text(
-            "experience.company",
-            &experience.company,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "experience.location",
-            &experience.location,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "experience.startDate",
-            &experience.start_date,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "experience.endDate",
-            &experience.end_date,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_bullets(&experience.bullets, "experience.bullets")?;
+        validate_experience_item(experience, true)?;
+    }
+
+    if resume.projects.len() > MAX_PROJECTS {
+        return Err(format!(
+            "A resume may contain at most {MAX_PROJECTS} project entries"
+        ));
+    }
+    let mut project_ids = HashSet::with_capacity(resume.projects.len());
+    for project in &resume.projects {
+        if !project_ids.insert(project.id.as_str()) {
+            return Err(format!("Duplicate project id: {}", project.id));
+        }
+        validate_project_item(project, true)?;
     }
 
     if resume.education.len() > MAX_EDUCATION {
@@ -122,17 +300,57 @@ pub(crate) fn validate_resume(resume: &Resume) -> CommandResult<()> {
     }
     let mut education_ids = HashSet::with_capacity(resume.education.len());
     for education in &resume.education {
-        validate_nonempty_text("education id", &education.id, MAX_ID_BYTES)?;
         if !education_ids.insert(education.id.as_str()) {
             return Err(format!("Duplicate education id: {}", education.id));
         }
-        validate_text("education.school", &education.school, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("education.degree", &education.degree, MAX_SHORT_TEXT_BYTES)?;
-        validate_text(
-            "education.graduation",
-            &education.graduation,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
+        validate_education_item(education, true)?;
+    }
+
+    if resume.certifications.len() > MAX_CERTIFICATIONS {
+        return Err(format!(
+            "A resume may contain at most {MAX_CERTIFICATIONS} certifications"
+        ));
+    }
+    let mut cert_ids = HashSet::with_capacity(resume.certifications.len());
+    for cert in &resume.certifications {
+        if !cert_ids.insert(cert.id.as_str()) {
+            return Err(format!("Duplicate certification id: {}", cert.id));
+        }
+        validate_certification_item(cert, true)?;
+    }
+
+    if resume.custom_sections.len() > MAX_CUSTOM_SECTIONS {
+        return Err(format!(
+            "A resume may contain at most {MAX_CUSTOM_SECTIONS} custom sections"
+        ));
+    }
+    let mut custom_section_ids = HashSet::with_capacity(resume.custom_sections.len());
+    for section in &resume.custom_sections {
+        validate_nonempty_text("customSection id", &section.id, MAX_ID_BYTES)?;
+        if !custom_section_ids.insert(section.id.as_str()) {
+            return Err(format!("Duplicate customSection id: {}", section.id));
+        }
+        validate_text("customSection.title", &section.title, MAX_SHORT_TEXT_BYTES)?;
+        if section.entries.len() > MAX_CUSTOM_ENTRIES {
+            return Err(format!(
+                "A custom section may contain at most {MAX_CUSTOM_ENTRIES} entries"
+            ));
+        }
+        let mut entry_ids = HashSet::with_capacity(section.entries.len());
+        for entry in &section.entries {
+            validate_nonempty_text("customEntry id", &entry.id, MAX_ID_BYTES)?;
+            if !entry_ids.insert(entry.id.as_str()) {
+                return Err(format!("Duplicate customEntry id: {}", entry.id));
+            }
+            validate_text("customEntry.heading", &entry.heading, MAX_SHORT_TEXT_BYTES)?;
+            validate_text(
+                "customEntry.subheading",
+                &entry.subheading,
+                MAX_SHORT_TEXT_BYTES,
+            )?;
+            validate_text("customEntry.date", &entry.date, MAX_SHORT_TEXT_BYTES)?;
+            validate_bullets(&entry.bullets, "customEntry.bullets")?;
+        }
     }
 
     if resume.skills.len() > MAX_SKILLS {
@@ -142,147 +360,40 @@ pub(crate) fn validate_resume(resume: &Resume) -> CommandResult<()> {
         validate_text("skill", skill, 100)?;
     }
 
-    validate_additional_entries(resume)?;
-    Ok(())
-}
-
-fn validate_additional_entries(resume: &Resume) -> CommandResult<()> {
-    validate_entry_count("projects", resume.projects.len())?;
-    validate_entry_count("certifications", resume.certifications.len())?;
-    validate_entry_count("awards", resume.awards.len())?;
-    validate_entry_count("volunteer", resume.volunteer.len())?;
-    validate_entry_count("publications", resume.publications.len())?;
-    validate_entry_count("languages", resume.languages.len())?;
-
-    let mut ids = HashSet::new();
-    for project in &resume.projects {
-        validate_unique_id(&mut ids, "project", &project.id)?;
-        validate_text("project.name", &project.name, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("project.role", &project.role, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("project.url", &project.url, MAX_SHORT_TEXT_BYTES)?;
-        validate_text(
-            "project.startDate",
-            &project.start_date,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text("project.endDate", &project.end_date, MAX_SHORT_TEXT_BYTES)?;
-        validate_bullets(&project.bullets, "project.bullets")?;
-    }
-    ids.clear();
-    for certification in &resume.certifications {
-        validate_unique_id(&mut ids, "certification", &certification.id)?;
-        validate_text(
-            "certification.name",
-            &certification.name,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "certification.issuer",
-            &certification.issuer,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "certification.date",
-            &certification.date,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "certification.credentialUrl",
-            &certification.credential_url,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-    }
-    ids.clear();
-    for award in &resume.awards {
-        validate_unique_id(&mut ids, "award", &award.id)?;
-        validate_text("award.title", &award.title, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("award.issuer", &award.issuer, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("award.date", &award.date, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("award.description", &award.description, MAX_SUMMARY_BYTES)?;
-    }
-    ids.clear();
-    for volunteer in &resume.volunteer {
-        validate_unique_id(&mut ids, "volunteer", &volunteer.id)?;
-        validate_text(
-            "volunteer.organization",
-            &volunteer.organization,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text("volunteer.role", &volunteer.role, MAX_SHORT_TEXT_BYTES)?;
-        validate_text(
-            "volunteer.startDate",
-            &volunteer.start_date,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "volunteer.endDate",
-            &volunteer.end_date,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_bullets(&volunteer.bullets, "volunteer.bullets")?;
-    }
-    ids.clear();
-    for publication in &resume.publications {
-        validate_unique_id(&mut ids, "publication", &publication.id)?;
-        validate_text(
-            "publication.title",
-            &publication.title,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text(
-            "publication.publisher",
-            &publication.publisher,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-        validate_text("publication.date", &publication.date, MAX_SHORT_TEXT_BYTES)?;
-        validate_text("publication.url", &publication.url, MAX_SHORT_TEXT_BYTES)?;
-    }
-    ids.clear();
-    for language in &resume.languages {
-        validate_unique_id(&mut ids, "language", &language.id)?;
-        validate_text("language.name", &language.name, MAX_SHORT_TEXT_BYTES)?;
-        validate_text(
-            "language.proficiency",
-            &language.proficiency,
-            MAX_SHORT_TEXT_BYTES,
-        )?;
-    }
-
-    let expected = default_additional_section_order();
-    if resume.additional_section_order.len() != expected.len()
-        || resume
-            .additional_section_order
-            .iter()
-            .copied()
-            .collect::<HashSet<_>>()
-            .len()
-            != expected.len()
-        || expected
-            .iter()
-            .any(|section| !resume.additional_section_order.contains(section))
-    {
-        return Err("additionalSectionOrder must contain every section once".to_string());
-    }
-    Ok(())
-}
-
-fn validate_entry_count(field: &str, count: usize) -> CommandResult<()> {
-    if count > MAX_ADDITIONAL_ENTRIES {
+    if resume.skill_groups.len() > MAX_SKILL_GROUPS {
         return Err(format!(
-            "{field} may contain at most {MAX_ADDITIONAL_ENTRIES} entries"
+            "A resume may contain at most {MAX_SKILL_GROUPS} skill groups"
         ));
     }
-    Ok(())
-}
+    let mut skill_group_ids = HashSet::with_capacity(resume.skill_groups.len());
+    for group in &resume.skill_groups {
+        if !skill_group_ids.insert(group.id.as_str()) {
+            return Err(format!("Duplicate skillGroup id: {}", group.id));
+        }
+        validate_skill_group_item(group, true)?;
+    }
 
-fn validate_unique_id<'a>(
-    ids: &mut HashSet<&'a str>,
-    field: &str,
-    id: &'a str,
-) -> CommandResult<()> {
-    validate_nonempty_text(&format!("{field} id"), id, MAX_ID_BYTES)?;
-    if !ids.insert(id) {
-        return Err(format!("Duplicate {field} id: {id}"));
+    if resume.section_order.len() != SECTION_COUNT {
+        return Err("Section order must include each section once".to_string());
+    }
+    let mut seen_sections = HashSet::with_capacity(SECTION_COUNT);
+    for section in &resume.section_order {
+        if !seen_sections.insert(*section) {
+            return Err("Section order must include each section once".to_string());
+        }
+    }
+
+    if resume.skipped_keywords.len() > MAX_SKIPPED_KEYWORDS {
+        return Err(format!(
+            "A resume may contain at most {MAX_SKIPPED_KEYWORDS} skipped keywords"
+        ));
+    }
+    let mut skipped = HashSet::with_capacity(resume.skipped_keywords.len());
+    for keyword in &resume.skipped_keywords {
+        validate_nonempty_text("skippedKeyword", keyword, 100)?;
+        if !skipped.insert(keyword.as_str()) {
+            return Err(format!("Duplicate skipped keyword: {keyword}"));
+        }
     }
     Ok(())
 }
@@ -320,7 +431,7 @@ pub(crate) fn validate_nonempty_text(
     validate_text(field, value, max_bytes)
 }
 
-pub(crate) fn validate_iso_datetime(value: &str) -> CommandResult<()> {
+fn validate_iso_datetime(value: &str) -> CommandResult<()> {
     let bytes = value.as_bytes();
     let has_fraction = bytes.get(19) == Some(&b'.');
     let minimum_length = if has_fraction { 22 } else { 20 };
@@ -363,7 +474,7 @@ pub(crate) fn validate_iso_datetime(value: &str) -> CommandResult<()> {
     Ok(())
 }
 
-pub(crate) fn parse_ascii_digits(bytes: &[u8]) -> Option<u32> {
+fn parse_ascii_digits(bytes: &[u8]) -> Option<u32> {
     if bytes.is_empty() || !bytes.iter().all(u8::is_ascii_digit) {
         return None;
     }
@@ -372,125 +483,4 @@ pub(crate) fn parse_ascii_digits(bytes: &[u8]) -> Option<u32> {
             .iter()
             .fold(0, |value, digit| value * 10 + u32::from(digit - b'0')),
     )
-}
-
-pub(crate) fn validate_export_request(
-    filename: &str,
-    contents: &[u8],
-    kind: &ExportKind,
-) -> CommandResult<()> {
-    validate_export_filename(filename, kind)?;
-    if contents.len() > MAX_EXPORT_BYTES {
-        return Err("Export contents exceed the 20 MB limit".to_string());
-    }
-    if matches!(kind, ExportKind::Pdf) && !contents.starts_with(b"%PDF-") {
-        return Err("PDF export contents do not have a valid PDF header".to_string());
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_export_filename(filename: &str, kind: &ExportKind) -> CommandResult<()> {
-    if filename.is_empty() || filename.len() > 255 {
-        return Err("Export filename must be between 1 and 255 bytes".to_string());
-    }
-    if filename == "." || filename == ".." || filename.contains('/') || filename.contains('\\') {
-        return Err("Export filename must be a basename".to_string());
-    }
-    if filename
-        .chars()
-        .any(|character| character == '\0' || character.is_control())
-    {
-        return Err("Export filename contains unsupported characters".to_string());
-    }
-    let expected_extension = match kind {
-        ExportKind::Pdf => "pdf",
-        ExportKind::Json => "json",
-    };
-    if Path::new(filename)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_none_or(|extension| !extension.eq_ignore_ascii_case(expected_extension))
-    {
-        return Err(format!(
-            "Export filename must use the .{expected_extension} extension"
-        ));
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_selected_export_path(path: &Path, kind: &ExportKind) -> CommandResult<()> {
-    let filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "Save dialog returned a path without a valid filename".to_string())?;
-    validate_export_filename(filename, kind)
-}
-
-pub(crate) fn validate_apr_review(
-    target: &AprTarget,
-    review: Option<&HighlightReview>,
-) -> CommandResult<()> {
-    let Some(review) = review else {
-        return Ok(());
-    };
-    if review.target != *target {
-        return Err("Highlight review does not match the selected accomplishment".to_string());
-    }
-    if matches!(review.action, AprStatus::Clear)
-        && matches!(review.project, AprStatus::Clear)
-        && matches!(review.result, AprStatus::Clear)
-    {
-        return Err("Highlight review must identify at least one weak dimension".to_string());
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_highlight_review_targets(targets: &[AprTarget]) -> CommandResult<()> {
-    if targets.is_empty() {
-        return Err("Add at least one highlight before requesting a review".to_string());
-    }
-    for target in targets {
-        validate_apr_target(target)?;
-    }
-    Ok(())
-}
-
-pub(crate) fn validate_apr_target(target: &AprTarget) -> CommandResult<()> {
-    validate_nonempty_text("resume id", &target.resume_id, MAX_ID_BYTES)?;
-    validate_nonempty_text("experience id", &target.experience_id, MAX_ID_BYTES)?;
-    if target.bullet_index >= MAX_BULLETS {
-        return Err(format!(
-            "Accomplishment index must be less than {MAX_BULLETS}"
-        ));
-    }
-    validate_text("role", &target.role, MAX_SHORT_TEXT_BYTES)?;
-    validate_nonempty_text("accomplishment", &target.bullet, MAX_BULLET_BYTES)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_support::*;
-
-    #[test]
-    fn apr_review_context_rejects_mismatched_and_all_clear_reviews() {
-        let target = sample_apr_target();
-        let mut mismatched = HighlightReview {
-            target: target.clone(),
-            action: AprStatus::Partial,
-            project: AprStatus::Clear,
-            result: AprStatus::Clear,
-        };
-        mismatched.target.bullet = "Different source.".to_string();
-        assert!(validate_apr_review(&target, Some(&mismatched)).is_err());
-
-        let all_clear = HighlightReview {
-            target,
-            action: AprStatus::Clear,
-            project: AprStatus::Clear,
-            result: AprStatus::Clear,
-        };
-        assert!(validate_apr_review(&all_clear.target, Some(&all_clear)).is_err());
-        assert!(validate_apr_review(&all_clear.target, None).is_ok());
-    }
 }

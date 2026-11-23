@@ -1,6 +1,7 @@
 import {
   Document,
   Font,
+  Link,
   Page,
   StyleSheet,
   Text,
@@ -10,8 +11,10 @@ import {
 import {
   accents,
   formatYearMonth,
-  type AdditionalSection,
+  normalizeExternalUrl,
+  type Density,
   type Resume,
+  type SectionKey,
 } from "./model";
 import sansRegular from "./assets/fonts/NotoSans-Regular.ttf";
 import sansBold from "./assets/fonts/NotoSans-Bold.ttf";
@@ -34,26 +37,56 @@ Font.register({
 });
 Font.registerHyphenationCallback((word) => [word]);
 
-const styles = StyleSheet.create({
-  page: {
+function getDensityMetrics(density: Density) {
+  if (density === "compact") {
+    return {
+      padding: 30,
+      paddingBottom: 34,
+      fontSize: 8,
+      lineHeight: 1.33,
+      nameSize: 19.5,
+      headlineSize: 9.5,
+      smallSize: 7,
+      sectionTop: 9,
+      sectionBottom: 3.5,
+      entryBottom: 4,
+    };
+  }
+  if (density === "spacious") {
+    return {
+      padding: 46,
+      paddingBottom: 50,
+      fontSize: 9,
+      lineHeight: 1.5,
+      nameSize: 23,
+      headlineSize: 11,
+      smallSize: 8,
+      sectionTop: 16,
+      sectionBottom: 6,
+      entryBottom: 8,
+    };
+  }
+  return {
     padding: 40,
     paddingBottom: 44,
-    fontFamily: "Noto Sans",
     fontSize: 8.5,
     lineHeight: 1.42,
-    color: "#303c39",
-  },
+    nameSize: 22,
+    headlineSize: 10.5,
+    smallSize: 7.5,
+    sectionTop: 13,
+    sectionBottom: 5,
+    entryBottom: 6,
+  };
+}
+
+const styles = StyleSheet.create({
   header: { borderBottomWidth: 1.2, paddingBottom: 10, marginBottom: 2 },
-  name: { fontSize: 22, fontWeight: 700, lineHeight: 1.2 },
-  headline: { marginTop: 3, fontSize: 10.5 },
-  contact: { marginTop: 5, fontSize: 7.5, color: "#57605e" },
-  sectionTitle: {
-    fontSize: 8.5,
-    fontWeight: 700,
-    marginTop: 13,
-    marginBottom: 5,
-  },
-  entry: { marginBottom: 6 },
+  name: { fontWeight: 700, lineHeight: 1.2 },
+  headline: { marginTop: 3 },
+  contact: { marginTop: 5, color: "#57605e" },
+  inlineLink: { color: "#57605e", textDecoration: "underline" },
+  sectionTitle: { fontWeight: 700 },
   entryHeading: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -61,11 +94,13 @@ const styles = StyleSheet.create({
     alignItems: "baseline",
   },
   role: { fontWeight: 700, flexShrink: 1 },
-  dates: { fontSize: 7.5, color: "#57605e", maxWidth: "40%" },
+  dates: { color: "#57605e", maxWidth: "40%" },
   company: { color: "#57605e", marginBottom: 2 },
   bullet: { flexDirection: "row", marginBottom: 1 },
   bulletMark: { width: 9 },
   bulletText: { flex: 1 },
+  skillRow: { marginBottom: 2 },
+  skillCategory: { fontWeight: 700 },
   pageNumber: {
     position: "absolute",
     bottom: 20,
@@ -75,64 +110,77 @@ const styles = StyleSheet.create({
   },
 });
 
-function ResumeDocument({ resume }: { resume: Resume }) {
+export function ResumeDocument({ resume }: { resume: Resume }) {
   const accent = accents[resume.accent];
   const titleFamily =
     resume.template === "editorial" ? "Noto Serif" : "Noto Sans";
-  return (
-    <Document
-      title={resume.title}
-      author={resume.basics.name}
-      creator="Hireloom"
-    >
-      <Page size="A4" style={styles.page} wrap>
-        <View style={[styles.header, { borderBottomColor: accent }]}>
-          <Text
-            style={[styles.name, { color: accent, fontFamily: titleFamily }]}
-          >
-            {resume.basics.name}
-          </Text>
-          {resume.basics.headline && (
-            <Text style={styles.headline}>{resume.basics.headline}</Text>
+  const metrics = getDensityMetrics(resume.density);
+  const pdfSize = resume.pageSize === "letter" ? "LETTER" : "A4";
+
+  const sectionHeadingStyle = [
+    styles.sectionTitle,
+    {
+      color: accent,
+      fontSize: metrics.fontSize,
+      marginTop: metrics.sectionTop,
+      marginBottom: metrics.sectionBottom,
+    },
+  ];
+
+  const renderInlineMetadata = (
+    items: { text: string; link?: boolean }[],
+    separator: string,
+  ) => {
+    const visible = items
+      .map((item) => ({ text: item.text.trim(), link: item.link }))
+      .filter((item) => item.text.length > 0);
+    return visible.map((item, index) => {
+      const href = item.link ? normalizeExternalUrl(item.text) : null;
+      return (
+        <Text key={`${index}-${item.text}`}>
+          {index > 0 ? separator : ""}
+          {href ? (
+            <Link src={href} style={styles.inlineLink}>
+              {item.text}
+            </Link>
+          ) : (
+            item.text
           )}
-          <Text style={styles.contact}>
-            {[
-              resume.basics.email,
-              resume.basics.phone,
-              resume.basics.location,
-              resume.basics.website,
-              resume.basics.github,
-            ]
-              .filter(Boolean)
-              .join("  ·  ")}
-          </Text>
-        </View>
-        {resume.summary.trim() && (
-          <>
-            <Text
-              style={[styles.sectionTitle, { color: accent }]}
-              minPresenceAhead={30}
-            >
+        </Text>
+      );
+    });
+  };
+
+  const renderSection = (key: SectionKey) => {
+    switch (key) {
+      case "summary":
+        if (!resume.summary.trim()) return null;
+        return (
+          <View key="summary">
+            <Text style={sectionHeadingStyle} minPresenceAhead={30}>
               Profile
             </Text>
             <Text orphans={2} widows={2}>
               {resume.summary}
             </Text>
-          </>
-        )}
-        {resume.experience.length > 0 && (
-          <>
-            <Text
-              style={[styles.sectionTitle, { color: accent }]}
-              minPresenceAhead={60}
-            >
+          </View>
+        );
+
+      case "experience":
+        if (!resume.experience.length) return null;
+        return (
+          <View key="experience">
+            <Text style={sectionHeadingStyle} minPresenceAhead={60}>
               Experience
             </Text>
             {resume.experience.map((entry) => (
-              <View key={entry.id} style={styles.entry}>
+              <View
+                key={entry.id}
+                style={{ marginBottom: metrics.entryBottom }}
+              >
                 <View style={styles.entryHeading} minPresenceAhead={35}>
                   <Text style={styles.role}>{entry.role}</Text>
-                  <Text style={styles.dates}>
+                  <Text style={[styles.dates, { fontSize: metrics.smallSize }]}>
                     {[entry.startDate, entry.endDate]
                       .filter(Boolean)
                       .map(formatYearMonth)
@@ -154,46 +202,250 @@ function ResumeDocument({ resume }: { resume: Resume }) {
                   ))}
               </View>
             ))}
-          </>
-        )}
-        {resume.education.length > 0 && (
-          <>
-            <Text
-              style={[styles.sectionTitle, { color: accent }]}
-              minPresenceAhead={45}
-            >
+          </View>
+        );
+
+      case "projects":
+        if (!resume.projects.length) return null;
+        return (
+          <View key="projects">
+            <Text style={sectionHeadingStyle} minPresenceAhead={50}>
+              Projects
+            </Text>
+            {resume.projects.map((project) => (
+              <View
+                key={project.id}
+                style={{ marginBottom: metrics.entryBottom }}
+              >
+                <View style={styles.entryHeading} minPresenceAhead={35}>
+                  <Text style={styles.role}>{project.name}</Text>
+                  <Text style={[styles.dates, { fontSize: metrics.smallSize }]}>
+                    {[project.startDate, project.endDate]
+                      .filter(Boolean)
+                      .map(formatYearMonth)
+                      .join(" – ")}
+                  </Text>
+                </View>
+                {(project.subtitle.trim() || project.url.trim()) && (
+                  <Text style={styles.company} minPresenceAhead={20}>
+                    {renderInlineMetadata(
+                      [
+                        { text: project.subtitle },
+                        { text: project.url, link: true },
+                      ],
+                      " · ",
+                    )}
+                  </Text>
+                )}
+                {project.bullets
+                  .filter((text) => text.trim())
+                  .map((text, index) => (
+                    <View key={index} style={styles.bullet}>
+                      <Text style={styles.bulletMark}>•</Text>
+                      <Text style={styles.bulletText} orphans={2} widows={2}>
+                        {text}
+                      </Text>
+                    </View>
+                  ))}
+              </View>
+            ))}
+          </View>
+        );
+
+      case "education":
+        if (!resume.education.length) return null;
+        return (
+          <View key="education">
+            <Text style={sectionHeadingStyle} minPresenceAhead={45}>
               Education
             </Text>
             {resume.education.map((entry) => (
-              <View key={entry.id} style={styles.entry} wrap={false}>
+              <View
+                key={entry.id}
+                style={{ marginBottom: metrics.entryBottom }}
+                wrap={false}
+              >
                 <View style={styles.entryHeading}>
                   <Text style={styles.role}>{entry.school}</Text>
-                  <Text style={styles.dates}>{entry.graduation}</Text>
+                  <Text style={[styles.dates, { fontSize: metrics.smallSize }]}>
+                    {entry.graduation}
+                  </Text>
                 </View>
                 <Text>{entry.degree}</Text>
               </View>
             ))}
-          </>
-        )}
-        {resume.skills.length > 0 && (
-          <>
-            <Text
-              style={[styles.sectionTitle, { color: accent }]}
-              minPresenceAhead={30}
-            >
+          </View>
+        );
+
+      case "certifications":
+        if (!resume.certifications.length) return null;
+        return (
+          <View key="certifications">
+            <Text style={sectionHeadingStyle} minPresenceAhead={40}>
+              Certifications
+            </Text>
+            {resume.certifications.map((cert) => (
+              <View
+                key={cert.id}
+                style={{ marginBottom: metrics.entryBottom - 2 }}
+                wrap={false}
+              >
+                <View style={styles.entryHeading}>
+                  <Text style={styles.role}>{cert.name}</Text>
+                  <Text style={[styles.dates, { fontSize: metrics.smallSize }]}>
+                    {cert.date}
+                  </Text>
+                </View>
+                {(cert.issuer.trim() || cert.url.trim()) && (
+                  <Text style={styles.company}>
+                    {renderInlineMetadata(
+                      [{ text: cert.issuer }, { text: cert.url, link: true }],
+                      " · ",
+                    )}
+                  </Text>
+                )}
+              </View>
+            ))}
+          </View>
+        );
+
+      case "skills": {
+        const groups = resume.skillGroups.filter(
+          (g) => g.category.trim() || g.items.some((i) => i.trim()),
+        );
+        const flat = resume.skills.filter((s) => s.trim());
+        if (!groups.length && !flat.length) return null;
+        return (
+          <View key="skills">
+            <Text style={sectionHeadingStyle} minPresenceAhead={30}>
               Skills
             </Text>
-            <Text>{resume.skills.join("  ·  ")}</Text>
-          </>
-        )}
-        {resume.additionalSectionOrder.map((section) => (
-          <AdditionalPdfSection
-            key={section}
-            resume={resume}
-            section={section}
-            accent={accent}
-          />
-        ))}
+            {groups.map((group) => (
+              <Text key={group.id} style={styles.skillRow}>
+                {group.category.trim() ? (
+                  <Text style={styles.skillCategory}>
+                    {group.category.trim()}:{" "}
+                  </Text>
+                ) : null}
+                {group.items.filter((i) => i.trim()).join("  ·  ")}
+              </Text>
+            ))}
+            {flat.length > 0 && (
+              <Text style={styles.skillRow}>
+                {groups.length > 0 ? (
+                  <Text style={styles.skillCategory}>Additional: </Text>
+                ) : null}
+                {flat.join("  ·  ")}
+              </Text>
+            )}
+          </View>
+        );
+      }
+
+      case "custom":
+        if (!resume.customSections.length) return null;
+        return (
+          <View key="custom">
+            {resume.customSections.map((section) => {
+              if (!section.title.trim() && !section.entries.length) return null;
+              return (
+                <View key={section.id}>
+                  <Text style={sectionHeadingStyle} minPresenceAhead={45}>
+                    {section.title.trim() || "Additional"}
+                  </Text>
+                  {section.entries.map((entry) => (
+                    <View
+                      key={entry.id}
+                      style={{ marginBottom: metrics.entryBottom }}
+                    >
+                      <View style={styles.entryHeading} minPresenceAhead={30}>
+                        <Text style={styles.role}>{entry.heading}</Text>
+                        <Text
+                          style={[
+                            styles.dates,
+                            { fontSize: metrics.smallSize },
+                          ]}
+                        >
+                          {entry.date}
+                        </Text>
+                      </View>
+                      {entry.subheading.trim() && (
+                        <Text style={styles.company}>{entry.subheading}</Text>
+                      )}
+                      {entry.bullets
+                        .filter((text) => text.trim())
+                        .map((text, index) => (
+                          <View key={index} style={styles.bullet}>
+                            <Text style={styles.bulletMark}>•</Text>
+                            <Text
+                              style={styles.bulletText}
+                              orphans={2}
+                              widows={2}
+                            >
+                              {text}
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        );
+    }
+  };
+
+  return (
+    <Document
+      title={resume.title}
+      author={resume.basics.name}
+      creator="Hireloom"
+    >
+      <Page
+        size={pdfSize}
+        style={{
+          padding: metrics.padding,
+          paddingBottom: metrics.paddingBottom,
+          fontFamily: "Noto Sans",
+          fontSize: metrics.fontSize,
+          lineHeight: metrics.lineHeight,
+          color: "#303c39",
+        }}
+        wrap
+      >
+        <View style={[styles.header, { borderBottomColor: accent }]}>
+          <Text
+            style={[
+              styles.name,
+              {
+                color: accent,
+                fontFamily: titleFamily,
+                fontSize: metrics.nameSize,
+              },
+            ]}
+          >
+            {resume.basics.name}
+          </Text>
+          {resume.basics.headline && (
+            <Text style={[styles.headline, { fontSize: metrics.headlineSize }]}>
+              {resume.basics.headline}
+            </Text>
+          )}
+          <Text style={[styles.contact, { fontSize: metrics.smallSize }]}>
+            {renderInlineMetadata(
+              [
+                { text: resume.basics.email },
+                { text: resume.basics.phone },
+                { text: resume.basics.location },
+                { text: resume.basics.website, link: true },
+                { text: resume.basics.github, link: true },
+              ],
+              "  ·  ",
+            )}
+          </Text>
+        </View>
+        {resume.sectionOrder.map((key) => renderSection(key))}
         <Text
           style={styles.pageNumber}
           fixed
@@ -203,159 +455,6 @@ function ResumeDocument({ resume }: { resume: Resume }) {
         />
       </Page>
     </Document>
-  );
-}
-
-function PdfSectionTitle({ title, accent }: { title: string; accent: string }) {
-  return (
-    <Text
-      style={[styles.sectionTitle, { color: accent }]}
-      minPresenceAhead={35}
-    >
-      {title}
-    </Text>
-  );
-}
-
-function PdfEntry({
-  title,
-  dates,
-  subtitle,
-  body,
-  bullets = [],
-}: {
-  title: string;
-  dates: string[];
-  subtitle: string[];
-  body?: string;
-  bullets?: string[];
-}) {
-  return (
-    <View style={styles.entry}>
-      <View style={styles.entryHeading} minPresenceAhead={25}>
-        <Text style={styles.role}>{title}</Text>
-        <Text style={styles.dates}>
-          {dates.filter(Boolean).map(formatYearMonth).join(" – ")}
-        </Text>
-      </View>
-      {subtitle.some(Boolean) && (
-        <Text style={styles.company} minPresenceAhead={18}>
-          {subtitle.filter(Boolean).join(" · ")}
-        </Text>
-      )}
-      {body && (
-        <Text orphans={2} widows={2}>
-          {body}
-        </Text>
-      )}
-      {bullets
-        .filter((text) => text.trim())
-        .map((text, index) => (
-          <View key={index} style={styles.bullet}>
-            <Text style={styles.bulletMark}>•</Text>
-            <Text style={styles.bulletText} orphans={2} widows={2}>
-              {text}
-            </Text>
-          </View>
-        ))}
-    </View>
-  );
-}
-
-function AdditionalPdfSection({
-  resume,
-  section,
-  accent,
-}: {
-  resume: Resume;
-  section: AdditionalSection;
-  accent: string;
-}) {
-  if (!resume[section].length) return null;
-  if (section === "projects")
-    return (
-      <>
-        <PdfSectionTitle title="Projects" accent={accent} />
-        {resume.projects.map((entry) => (
-          <PdfEntry
-            key={entry.id}
-            title={entry.name}
-            dates={[entry.startDate, entry.endDate]}
-            subtitle={[entry.role, entry.url]}
-            bullets={entry.bullets}
-          />
-        ))}
-      </>
-    );
-  if (section === "certifications")
-    return (
-      <>
-        <PdfSectionTitle title="Certifications" accent={accent} />
-        {resume.certifications.map((entry) => (
-          <PdfEntry
-            key={entry.id}
-            title={entry.name}
-            dates={[entry.date]}
-            subtitle={[entry.issuer, entry.credentialUrl]}
-          />
-        ))}
-      </>
-    );
-  if (section === "awards")
-    return (
-      <>
-        <PdfSectionTitle title="Awards" accent={accent} />
-        {resume.awards.map((entry) => (
-          <PdfEntry
-            key={entry.id}
-            title={entry.title}
-            dates={[entry.date]}
-            subtitle={[entry.issuer]}
-            body={entry.description}
-          />
-        ))}
-      </>
-    );
-  if (section === "volunteer")
-    return (
-      <>
-        <PdfSectionTitle title="Volunteer Experience" accent={accent} />
-        {resume.volunteer.map((entry) => (
-          <PdfEntry
-            key={entry.id}
-            title={entry.role}
-            dates={[entry.startDate, entry.endDate]}
-            subtitle={[entry.organization]}
-            bullets={entry.bullets}
-          />
-        ))}
-      </>
-    );
-  if (section === "publications")
-    return (
-      <>
-        <PdfSectionTitle title="Publications" accent={accent} />
-        {resume.publications.map((entry) => (
-          <PdfEntry
-            key={entry.id}
-            title={entry.title}
-            dates={[entry.date]}
-            subtitle={[entry.publisher, entry.url]}
-          />
-        ))}
-      </>
-    );
-  return (
-    <>
-      <PdfSectionTitle title="Languages" accent={accent} />
-      <Text>
-        {resume.languages
-          .map((entry) =>
-            [entry.name, entry.proficiency].filter(Boolean).join(" — "),
-          )
-          .join("  ·  ")}
-      </Text>
-    </>
   );
 }
 

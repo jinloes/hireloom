@@ -24,8 +24,13 @@ export default defineConfig([
     extends: [reactHooks.configs.flat.recommended, reactRefresh.configs.vite],
   },
   {
-    // Lazy-loaded PDF renderer: exports a factory, never hot-reloaded as UI.
-    files: ["src/ResumeDocument.tsx"],
+    // Lazy-loaded PDF renderer and shared primitive modules export tiny stateless
+    // helpers alongside components.
+    files: [
+      "src/ResumeDocument.tsx",
+      "src/components/copilot/ProposalPrimitives.tsx",
+      "src/components/editor/FieldPrimitives.tsx",
+    ],
     rules: { "react-refresh/only-export-components": "off" },
   },
   {

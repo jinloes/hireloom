@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { errorMessage, initialWorkspace, type Workspace } from "./model";
+import {
+  errorMessage,
+  initialWorkspace,
+  upgradeWorkspace,
+  type Workspace,
+} from "./model";
 import { desktop, loadWorkspace, saveWorkspace } from "./platform";
 
 export function useWorkspace() {
@@ -12,13 +17,24 @@ export function useWorkspace() {
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
   const latest = useRef<Workspace | null>(null);
   const persisted = useRef<string | null>(null);
+  const snapshotCache = useRef<{ ws: Workspace; json: string } | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
 
+  const snapshotOf = useCallback((ws: Workspace | null): string | null => {
+    if (!ws) return null;
+    if (snapshotCache.current?.ws === ws) return snapshotCache.current.json;
+    const json = JSON.stringify(ws);
+    snapshotCache.current = { ws, json };
+    return json;
+  }, []);
+
   const load = useCallback(async () => {
+    setLoadError(null);
     try {
-      const saved = await loadWorkspace();
+      const rawSaved = await loadWorkspace();
+      const saved = rawSaved ? upgradeWorkspace(rawSaved) : null;
       const next = saved ?? initialWorkspace();
-      persisted.current = saved ? JSON.stringify(saved) : null;
+      persisted.current = saved ? snapshotOf(saved) : null;
       setSavedSnapshot(persisted.current);
       latest.current = next;
       setWorkspace(next);
@@ -26,26 +42,22 @@ export function useWorkspace() {
     } catch (error) {
       setLoadError(errorMessage(error));
     }
-  }, []);
+  }, [snapshotOf]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  const reload = useCallback(async () => {
-    setLoadError(null);
-    await load();
+    void Promise.resolve().then(() => load());
   }, [load]);
 
   const flush = useCallback(async () => {
     // Serialize snapshots so an older, slower disk write cannot replace newer edits.
     const operation = queue.current.then(async () => {
       const next = latest.current;
-      if (!next || JSON.stringify(next) === persisted.current) return;
+      const nextSnapshot = snapshotOf(next);
+      if (!next || nextSnapshot === persisted.current) return;
       setSaving(true);
       try {
         await saveWorkspace(next);
-        persisted.current = JSON.stringify(next);
+        persisted.current = nextSnapshot;
         setSavedSnapshot(persisted.current);
         setSaveError(null);
       } catch (error) {
@@ -59,7 +71,7 @@ export function useWorkspace() {
       /* The error is surfaced in saveError; keep future retries usable. */
     });
     return operation;
-  }, []);
+  }, [snapshotOf]);
 
   const update = useCallback(
     (next: Workspace | ((current: Workspace) => Workspace)) => {
@@ -84,10 +96,7 @@ export function useWorkspace() {
 
   useEffect(() => {
     const preventUnsavedClose = (event: BeforeUnloadEvent) => {
-      if (
-        latest.current &&
-        JSON.stringify(latest.current) !== persisted.current
-      ) {
+      if (latest.current && snapshotOf(latest.current) !== persisted.current) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -102,7 +111,7 @@ export function useWorkspace() {
           try {
             while (
               latest.current &&
-              JSON.stringify(latest.current) !== persisted.current
+              snapshotOf(latest.current) !== persisted.current
             ) {
               await flush();
             }
@@ -128,10 +137,13 @@ export function useWorkspace() {
       unlisten?.();
       window.removeEventListener("beforeunload", preventUnsavedClose);
     };
-  }, [flush]);
+  }, [flush, snapshotOf]);
 
-  const dirty =
-    workspace !== null && JSON.stringify(workspace) !== savedSnapshot;
+  const currentSnapshot = useMemo(
+    () => (workspace ? JSON.stringify(workspace) : null),
+    [workspace],
+  );
+  const dirty = workspace !== null && currentSnapshot !== savedSnapshot;
   return {
     workspace,
     update,
@@ -140,6 +152,6 @@ export function useWorkspace() {
     saving,
     dirty,
     flush,
-    reload,
+    reload: load,
   };
 }

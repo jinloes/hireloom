@@ -1,0 +1,14 @@
+# Exclude generated artifacts, lockfiles, and binary assets from default code search/glob
+node_modules/
+dist/
+dist-ssr/
+src-tauri/target/
+src-tauri/gen/
+coverage/
+playwright-report/
+test-results/
+.idea/
+package-lock.json
+src-tauri/Cargo.lock
+src/assets/fonts/*.ttf
+src-tauri/icons/

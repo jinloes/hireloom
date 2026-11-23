@@ -1,330 +1,345 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AlignLeft, Sparkles, Upload, UserRound } from "lucide-react";
+import type { AprTarget, CareerLibrary, Resume, SectionKey } from "../model";
 import {
-  AlignLeft,
-  BriefcaseBusiness,
-  GraduationCap,
-  Shapes,
-  Sparkles,
-  SquareStack,
-  UserRound,
-} from "lucide-react";
-import type { Education, Experience, Resume } from "../model";
-import type { HighlightGuidanceController } from "./HighlightGuidance";
-import { EducationSection } from "./editor/EducationSection";
+  CertificationsSection,
+  EducationSection,
+} from "./editor/CredentialsSections";
 import { ExperienceSection } from "./editor/ExperienceSection";
-import { PersonalSection } from "./editor/PersonalSection";
-import { SkillsSection } from "./editor/SkillsSection";
-import { SummarySection } from "./editor/SummarySection";
-import { AdditionalSection } from "./editor/AdditionalSection";
-import { createExperience } from "./editor/helpers";
-import type {
-  ContentRemovalRequest,
-  ContentSection,
-  ContentViewState,
-  HighlightDraftsController,
-  HighlightReviewController,
-} from "./editor/types";
-export { Field } from "./editor/fields";
-export type {
-  ContentRemovalRequest,
-  ContentSection,
-  ContentViewState,
-  HighlightReviewController,
-} from "./editor/types";
+import {
+  Field,
+  type ChangeMeta,
+  type EditorFocusRequest,
+} from "./editor/FieldPrimitives";
+import { ProjectsSection } from "./editor/ProjectsSection";
+import {
+  CustomSectionsEditor,
+  SkillsSection,
+} from "./editor/SkillsAndCustomSections";
 
-const contentSections: Array<{
-  id: ContentSection;
-  tabLabel: string;
-  label: string;
-  number: string;
-}> = [
-  {
-    id: "personal",
-    tabLabel: "Personal",
-    label: "Personal details",
-    number: "01",
-  },
-  {
-    id: "summary",
-    tabLabel: "Summary",
-    label: "Professional summary",
-    number: "02",
-  },
-  {
-    id: "experience",
-    tabLabel: "Experience",
-    label: "Experience",
-    number: "03",
-  },
-  {
-    id: "education",
-    tabLabel: "Education",
-    label: "Education",
-    number: "04",
-  },
-  { id: "skills", tabLabel: "Skills", label: "Skills", number: "05" },
-  {
-    id: "additional",
-    tabLabel: "More",
-    label: "Additional sections",
-    number: "06",
-  },
-];
+export { Field, type ChangeMeta, type EditorFocusRequest };
 
 export function Editor({
   resume,
   onChange,
   onAi,
   onExample,
-  highlightGuidance,
-  highlightReview,
-  highlightDrafts,
-  viewState,
-  onViewStateChange,
-  onRemove,
-  focusTarget,
-  onFocusTargetHandled,
+  onImportResume,
+  onCoachBullet,
+  careerLibrary,
+  onSaveExperienceToLibrary,
+  onPullExperienceFromLibrary,
+  onSaveProjectToLibrary,
+  onPullProjectFromLibrary,
+  focusRequest,
 }: {
   resume: Resume;
-  onChange: (resume: Resume) => void;
+  onChange: (resume: Resume, meta?: ChangeMeta) => void;
   onAi: () => void;
   onExample: () => void;
-  highlightGuidance: HighlightGuidanceController;
-  highlightReview: HighlightReviewController;
-  highlightDrafts: HighlightDraftsController;
-  viewState: ContentViewState;
-  onViewStateChange: (state: ContentViewState) => void;
-  onRemove: (request: ContentRemovalRequest) => void;
-  focusTarget: string | null;
-  onFocusTargetHandled: () => void;
+  onImportResume?: () => void;
+  onCoachBullet?: (target: AprTarget) => void;
+  careerLibrary?: CareerLibrary;
+  onSaveExperienceToLibrary?: (experienceId: string) => void;
+  onPullExperienceFromLibrary?: (experienceId: string) => void;
+  onSaveProjectToLibrary?: (projectId: string) => void;
+  onPullProjectFromLibrary?: (projectId: string) => void;
+  focusRequest?: EditorFocusRequest | null;
 }) {
-  const pendingElementFocus = useRef<string | null>(null);
-  const basics = (key: keyof Resume["basics"], value: string) =>
-    onChange({ ...resume, basics: { ...resume.basics, [key]: value } });
-  const experience = (id: string, patch: Partial<Experience>) =>
-    onChange({
-      ...resume,
-      experience: resume.experience.map((entry) =>
-        entry.id === id ? { ...entry, ...patch } : entry,
-      ),
-    });
-  const education = (id: string, patch: Partial<Education>) =>
-    onChange({
-      ...resume,
-      education: resume.education.map((entry) =>
-        entry.id === id ? { ...entry, ...patch } : entry,
-      ),
-    });
-  const empty =
-    !resume.basics.name && !resume.experience.length && !resume.summary;
-  const activeSection =
-    contentSections.find((section) => section.id === viewState.section) ??
-    contentSections[0];
-  const selectedExperience =
-    resume.experience.find(
-      (entry) => entry.id === viewState.selectedExperienceId,
-    ) ?? null;
-  const selectedExperienceIndex = selectedExperience
-    ? resume.experience.indexOf(selectedExperience)
-    : -1;
-  const sectionHeadingId = `content-section-${activeSection.id}`;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [openSections, setOpenSections] = useState<
+    Record<SectionKey | "basics", boolean>
+  >({
+    basics: true,
+    summary: true,
+    experience: true,
+    projects: resume.projects.length > 0,
+    education: resume.education.length > 0,
+    certifications: resume.certifications.length > 0,
+    skills: true,
+    custom: resume.customSections.length > 0,
+  });
+  const [collapsedIds, setCollapsedIds] = useState<Record<string, boolean>>({});
+  const [prevFocusRequest, setPrevFocusRequest] =
+    useState<EditorFocusRequest | null>(null);
+
+  if (focusRequest && focusRequest !== prevFocusRequest) {
+    setPrevFocusRequest(focusRequest);
+    setOpenSections((prev) => ({ ...prev, [focusRequest.section]: true }));
+    if (focusRequest.entryId) {
+      const targetEntryId = focusRequest.entryId;
+      setCollapsedIds((prev) => ({ ...prev, [targetEntryId]: false }));
+    }
+  }
+
+  const toggleCollapsed = (entryId: string) =>
+    setCollapsedIds((prev) => ({ ...prev, [entryId]: !prev[entryId] }));
+
+  const handleSectionToggle = (
+    section: SectionKey | "basics",
+    event: React.SyntheticEvent<HTMLDetailsElement>,
+  ) => {
+    const isOpen = event.currentTarget.open;
+    setOpenSections((prev) =>
+      prev[section] === isOpen ? prev : { ...prev, [section]: isOpen },
+    );
+  };
 
   useEffect(() => {
-    const target = focusTarget ?? pendingElementFocus.current;
-    if (!target) return;
-    document.getElementById(target)?.focus();
-    pendingElementFocus.current = null;
-    if (focusTarget) onFocusTargetHandled();
-  }, [focusTarget, onFocusTargetHandled, resume, viewState]);
-
-  const selectSection = (section: ContentSection) => {
-    onViewStateChange({ ...viewState, section });
-  };
-
-  const selectSectionFromKeyboard = (section: ContentSection) => {
-    selectSection(section);
-    const tab = document.getElementById(`content-tab-${section}`);
-    tab?.focus();
-    tab?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  };
-
-  const addExperience = (position: "top" | "end") => {
-    const entry = createExperience();
-    pendingElementFocus.current = `job-title-${entry.id}`;
-    onViewStateChange({ ...viewState, selectedExperienceId: entry.id });
-    onChange({
-      ...resume,
-      experience:
-        position === "top"
-          ? [entry, ...resume.experience]
-          : [...resume.experience, entry],
-    });
-  };
-
-  const selectExperience = (id: string) => {
-    if (
-      viewState.selectedExperienceId !== id &&
-      highlightGuidance.target?.resumeId === resume.id
-    ) {
-      highlightGuidance.onKeep();
-    }
-    if (viewState.selectedExperienceId !== id && highlightDrafts.owner) {
-      highlightDrafts.onDiscard();
-    }
-    onViewStateChange({ ...viewState, selectedExperienceId: id });
-  };
-
-  const sectionCount = (section: ContentSection) => {
-    if (section === "experience") return resume.experience.length;
-    if (section === "education") return resume.education.length;
-    if (section === "additional")
-      return (
-        resume.projects.length +
-        resume.certifications.length +
-        resume.awards.length +
-        resume.volunteer.length +
-        resume.publications.length +
-        resume.languages.length
+    if (!focusRequest) return;
+    const timer = window.setTimeout(() => {
+      const container = rootRef.current;
+      if (!container) return;
+      const safeId =
+        focusRequest.entryId &&
+        typeof CSS !== "undefined" &&
+        typeof CSS.escape === "function"
+          ? CSS.escape(focusRequest.entryId)
+          : focusRequest.entryId;
+      const target = safeId
+        ? container.querySelector<HTMLElement>(`[data-entry-id="${safeId}"]`)
+        : container.querySelector<HTMLElement>(
+            `[data-editor-section="${focusRequest.section}"]`,
+          );
+      target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const firstInput = target?.querySelector<HTMLElement>(
+        "input, textarea, select, summary",
       );
-    return null;
-  };
+      firstInput?.focus({ preventScroll: true });
+    }, 30);
+    return () => window.clearTimeout(timer);
+  }, [focusRequest]);
 
-  const sectionIcon = (section: ContentSection) => {
-    if (section === "personal") return <UserRound size={17} />;
-    if (section === "summary") return <AlignLeft size={17} />;
-    if (section === "experience") return <BriefcaseBusiness size={17} />;
-    if (section === "education") return <GraduationCap size={17} />;
-    if (section === "additional") return <SquareStack size={17} />;
-    return <Shapes size={17} />;
+  const basics = (key: keyof Resume["basics"], value: string) =>
+    onChange({ ...resume, basics: { ...resume.basics, [key]: value } });
+
+  const empty =
+    !resume.basics.name &&
+    !resume.experience.length &&
+    !resume.projects.length &&
+    !resume.summary;
+
+  const renderOrderedSection = (key: SectionKey, badgeNumber: string) => {
+    switch (key) {
+      case "summary":
+        return (
+          <details
+            key="summary"
+            className="editor-section"
+            data-editor-section="summary"
+            open={openSections.summary}
+            onToggle={(e) => handleSectionToggle("summary", e)}
+          >
+            <summary>
+              <span>
+                <AlignLeft size={17} /> Professional summary
+              </span>
+              <span className="section-number">{badgeNumber}</span>
+            </summary>
+            <div className="section-fields">
+              <Field
+                label="Your story, in a few lines"
+                value={resume.summary}
+                onChange={(summary) => onChange({ ...resume, summary })}
+                multiline
+                rows={5}
+                maxLength={10_000}
+                placeholder="What do you do well? What experience and perspective will you bring to your next team?"
+              />
+              <button className="ai-text-button" onClick={onAi}>
+                <Sparkles size={14} /> Tailor &amp; coach with AI
+              </button>
+            </div>
+          </details>
+        );
+
+      case "experience":
+        return (
+          <ExperienceSection
+            key="experience"
+            resume={resume}
+            badgeNumber={badgeNumber}
+            open={openSections.experience}
+            onToggleSection={(e) => handleSectionToggle("experience", e)}
+            collapsedIds={collapsedIds}
+            onToggleCollapsed={toggleCollapsed}
+            onChange={onChange}
+            onCoachBullet={onCoachBullet}
+            careerLibrary={careerLibrary}
+            onSaveExperienceToLibrary={onSaveExperienceToLibrary}
+            onPullExperienceFromLibrary={onPullExperienceFromLibrary}
+          />
+        );
+
+      case "projects":
+        return (
+          <ProjectsSection
+            key="projects"
+            resume={resume}
+            badgeNumber={badgeNumber}
+            open={openSections.projects}
+            onToggleSection={(e) => handleSectionToggle("projects", e)}
+            collapsedIds={collapsedIds}
+            onToggleCollapsed={toggleCollapsed}
+            onChange={onChange}
+            onCoachBullet={onCoachBullet}
+            careerLibrary={careerLibrary}
+            onSaveProjectToLibrary={onSaveProjectToLibrary}
+            onPullProjectFromLibrary={onPullProjectFromLibrary}
+          />
+        );
+
+      case "education":
+        return (
+          <EducationSection
+            key="education"
+            resume={resume}
+            badgeNumber={badgeNumber}
+            open={openSections.education}
+            onToggleSection={(e) => handleSectionToggle("education", e)}
+            collapsedIds={collapsedIds}
+            onToggleCollapsed={toggleCollapsed}
+            onChange={onChange}
+          />
+        );
+
+      case "certifications":
+        return (
+          <CertificationsSection
+            key="certifications"
+            resume={resume}
+            badgeNumber={badgeNumber}
+            open={openSections.certifications}
+            onToggleSection={(e) => handleSectionToggle("certifications", e)}
+            collapsedIds={collapsedIds}
+            onToggleCollapsed={toggleCollapsed}
+            onChange={onChange}
+          />
+        );
+
+      case "skills":
+        return (
+          <SkillsSection
+            key="skills"
+            resume={resume}
+            badgeNumber={badgeNumber}
+            open={openSections.skills}
+            onToggleSection={(e) => handleSectionToggle("skills", e)}
+            onChange={onChange}
+          />
+        );
+
+      case "custom":
+        return (
+          <CustomSectionsEditor
+            key="custom"
+            resume={resume}
+            badgeNumber={badgeNumber}
+            open={openSections.custom}
+            onToggleSection={(e) => handleSectionToggle("custom", e)}
+            onChange={onChange}
+          />
+        );
+    }
   };
 
   return (
-    <div className="editor-content content-workspace">
-      <div
-        className="content-tabs"
-        role="tablist"
-        aria-label="Content sections"
-      >
-        {contentSections.map((section, index) => {
-          const count = sectionCount(section.id);
-          return (
-            <button
-              key={section.id}
-              id={`content-tab-${section.id}`}
-              role="tab"
-              aria-label={section.tabLabel}
-              aria-controls={`content-panel-${section.id}`}
-              aria-selected={viewState.section === section.id}
-              tabIndex={viewState.section === section.id ? 0 : -1}
-              onClick={() => selectSection(section.id)}
-              onKeyDown={(event) => {
-                const nextIndex =
-                  event.key === "ArrowRight"
-                    ? (index + 1) % contentSections.length
-                    : event.key === "ArrowLeft"
-                      ? (index - 1 + contentSections.length) %
-                        contentSections.length
-                      : event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? contentSections.length - 1
-                          : -1;
-                if (nextIndex >= 0) {
-                  event.preventDefault();
-                  selectSectionFromKeyboard(contentSections[nextIndex].id);
-                }
-              }}
-            >
-              <span className="section-number" aria-hidden="true">
-                {section.number}
-              </span>
-              <span>{section.tabLabel}</span>
-              {count !== null && (
-                <span className="count" aria-hidden="true">
-                  {count}
-                </span>
+    <div className="editor-content" ref={rootRef}>
+      {empty && (
+        <div className="start-note">
+          <span className="small-icon">
+            <Sparkles size={18} />
+          </span>
+          <div>
+            <strong>A good story starts with you.</strong>
+            <p>
+              Add your details below,{" "}
+              {onImportResume && (
+                <>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={onImportResume}
+                  >
+                    <Upload size={11} /> upload an existing PDF or DOCX resume
+                  </button>
+                  ,{" "}
+                </>
               )}
-            </button>
-          );
-        })}
-      </div>
-      {contentSections
-        .filter((section) => section.id !== activeSection.id)
-        .map((section) => (
-          <div
-            key={section.id}
-            role="tabpanel"
-            id={`content-panel-${section.id}`}
-            aria-labelledby={`content-tab-${section.id}`}
-            hidden
-          />
-        ))}
-      <div
-        className={`content-section-scroll content-section-${activeSection.id}`}
-        role="tabpanel"
-        id={`content-panel-${activeSection.id}`}
-        aria-labelledby={`content-tab-${activeSection.id}`}
-        data-testid="content-section-scroll"
-      >
-        {empty && viewState.section === "personal" && (
-          <div className="start-note">
-            <span className="small-icon">
-              <Sparkles size={18} />
-            </span>
-            <div>
-              <strong>A good story starts with you.</strong>
-              <p>
-                Add your details below, or{" "}
-                <button className="text-button" onClick={onExample}>
-                  try a fictional example
-                </button>
-                .
-              </p>
-            </div>
+              or{" "}
+              <button type="button" className="text-button" onClick={onExample}>
+                try a fictional example
+              </button>
+              .
+            </p>
           </div>
-        )}
-        <section className="editor-section" aria-labelledby={sectionHeadingId}>
-          <h2 id={sectionHeadingId}>
-            {sectionIcon(activeSection.id)}
-            {activeSection.label}
-          </h2>
-          {viewState.section === "personal" && (
-            <PersonalSection resume={resume} basics={basics} />
-          )}
-          {viewState.section === "summary" && (
-            <SummarySection resume={resume} onChange={onChange} onAi={onAi} />
-          )}
-          {viewState.section === "experience" && (
-            <ExperienceSection
-              resume={resume}
-              selectedExperience={selectedExperience}
-              selectedExperienceIndex={selectedExperienceIndex}
-              onChange={onChange}
-              onRemove={onRemove}
-              experience={experience}
-              addExperience={addExperience}
-              selectExperience={selectExperience}
-              highlightGuidance={highlightGuidance}
-              highlightReview={highlightReview}
-              highlightDrafts={highlightDrafts}
+        </div>
+      )}
+      <details
+        className="editor-section"
+        data-editor-section="basics"
+        open={openSections.basics}
+        onToggle={(e) => handleSectionToggle("basics", e)}
+      >
+        <summary>
+          <span>
+            <UserRound size={17} /> Personal details
+          </span>
+          <span className="section-number">01</span>
+        </summary>
+        <div className="section-fields">
+          <Field
+            label="Full name"
+            value={resume.basics.name}
+            onChange={(value) => basics("name", value)}
+            placeholder="e.g. Alex Morgan"
+          />
+          <Field
+            label="Professional headline"
+            value={resume.basics.headline}
+            onChange={(value) => basics("headline", value)}
+            placeholder="e.g. Product Designer"
+          />
+          <div className="field-grid">
+            <Field
+              label="Email"
+              type="email"
+              value={resume.basics.email}
+              onChange={(value) => basics("email", value)}
+              placeholder="you@example.com"
             />
-          )}
-          {viewState.section === "education" && (
-            <EducationSection
-              resume={resume}
-              onChange={onChange}
-              education={education}
-              onRemove={onRemove}
+            <Field
+              label="Phone"
+              type="tel"
+              value={resume.basics.phone}
+              onChange={(value) => basics("phone", value)}
+              placeholder="Optional"
             />
-          )}
-          {viewState.section === "skills" && (
-            <SkillsSection resume={resume} onChange={onChange} />
-          )}
-          {viewState.section === "additional" && (
-            <AdditionalSection resume={resume} onChange={onChange} />
-          )}
-        </section>
-      </div>
+          </div>
+          <Field
+            label="Location"
+            value={resume.basics.location}
+            onChange={(value) => basics("location", value)}
+            placeholder="City, country"
+          />
+          <Field
+            label="Portfolio or LinkedIn"
+            value={resume.basics.website}
+            onChange={(value) => basics("website", value)}
+            placeholder="Your website or profile URL"
+          />
+          <Field
+            label="GitHub URL"
+            type="url"
+            value={resume.basics.github}
+            onChange={(value) => basics("github", value)}
+            placeholder="https://github.com/username"
+          />
+        </div>
+      </details>
+      {resume.sectionOrder.map((key, idx) =>
+        renderOrderedSection(key, String(idx + 2).padStart(2, "0")),
+      )}
     </div>
   );
 }

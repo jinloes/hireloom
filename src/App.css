@@ -1,12 +1,5 @@
-@import "./styles/base.css";
-@import "./styles/shell.css";
-@import "./styles/studio.css";
-@import "./styles/editor.css";
-@import "./styles/preview.css";
-@import "./styles/notices.css";
-@import "./styles/copilot.css";
-@import "./styles/guidance.css";
-@import "./styles/style-panel.css";
-@import "./styles/library.css";
-@import "./styles/dialogs.css";
-@import "./styles/responsive.css";
+@import "./styles/base-and-editor.css";
+@import "./styles/preview-and-copilot.css";
+@import "./styles/library-and-v2.css";
+@import "./styles/theme-and-ai.css";
+@import "./styles/studio-modes.css";

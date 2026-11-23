@@ -1,55 +1,55 @@
-import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, LockKeyhole } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createResume,
   errorMessage,
-  exampleResume,
+  PROVIDER_LABELS,
+  syncResumeToCareerLibrary,
   type Resume,
+  type SectionKey,
 } from "./model";
-import { copilotStatus, loginToCopilot, type CopilotStatus } from "./platform";
+import { desktop } from "./platform";
+import {
+  loadUiPreferences,
+  saveUiPreferences,
+  type PreviewZoom,
+  type StudioTheme,
+} from "./uiPreferences";
 import { useWorkspace } from "./useWorkspace";
-import { useHighlightGuidance } from "./useHighlightGuidance";
-import { useHighlightDrafts } from "./useHighlightDrafts";
-import { useResumeGeneration } from "./useResumeGeneration";
-import { useWorkspaceTransfer } from "./useWorkspaceTransfer";
+import { useResumeDocumentIo } from "./hooks/useResumeDocumentIo";
 import {
-  contentRemovalRecord,
-  reconcileContentView,
-  removeContentItem,
-  restoreContentItem,
-  type ContentChange,
-  type ContentRemoval,
-} from "./contentView";
+  useStudioAiWorkflows,
+  type StudioNotice,
+} from "./hooks/useStudioAiWorkflows";
+import { CareerLibraryView } from "./components/CareerLibraryView";
+import type { ChangeMeta, EditorFocusRequest } from "./components/Editor";
+import { ResumeLibraryView } from "./components/studio/ResumeLibraryView";
 import {
-  Editor,
-  type ContentRemovalRequest,
-  type ContentViewState,
-} from "./components/Editor";
-import { CopilotPanel } from "./components/CopilotPanel";
-import { StylePanel } from "./components/StylePanel";
-import { Sidebar } from "./components/Sidebar";
-import { WorkspaceHeader, type Notice } from "./components/WorkspaceHeader";
-import { ResumeLibrary } from "./components/ResumeLibrary";
-import { DocumentToolbar } from "./components/DocumentToolbar";
-import { WorkspaceTabs, type WorkspaceMode } from "./components/WorkspaceTabs";
-import { PreviewPanel } from "./components/PreviewPanel";
-import { DeleteDialog, LicenseDialog } from "./components/Dialogs";
-import type { AuditFinding } from "./targetAudit";
+  DeleteDialog,
+  ImportReviewDialog,
+  LicenseDialog,
+} from "./components/studio/StudioDialogs";
+import { StudioDocumentToolbar } from "./components/studio/StudioDocumentToolbar";
+import { StudioEditPane } from "./components/studio/StudioEditPane";
+import {
+  StudioPreviewPane,
+  type StudioTab,
+} from "./components/studio/StudioPreviewPane";
+import {
+  LoadingScreen,
+  NoticeBanner,
+  SaveErrorBanner,
+  StudioSidebar,
+  StudioTopbar,
+  WorkspaceHeading,
+  type WorkspaceView,
+} from "./components/studio/StudioShellChrome";
 import "./App.css";
 
-type ContentStatus = {
-  sequence: number;
-  message: string;
+type HistoryEntry = {
+  resume: Resume;
+  source: "ai" | "edit" | "delete";
+  timestamp: number;
 };
-
-function copyOf(item: Resume): Resume {
-  return {
-    ...structuredClone(item),
-    id: crypto.randomUUID(),
-    title: `${item.title.slice(0, 110)} (copy)`,
-    updatedAt: new Date().toISOString(),
-  };
-}
 
 function App() {
   const {
@@ -62,154 +62,46 @@ function App() {
     flush,
     reload,
   } = useWorkspace();
-  const [tab, setTab] = useState<WorkspaceMode>("content");
-  const [library, setLibrary] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const [copilot, setCopilot] = useState<CopilotStatus | null>(null);
-  const [busy, setBusy] = useState<
-    | "status"
-    | "login"
-    | "generate"
-    | "analyze"
-    | "refine"
-    | "review"
-    | "draft"
-    | null
-  >("status");
-  const [undo, setUndo] = useState<Resume | null>(null);
-  const [contentViews, setContentViews] = useState<
-    Record<string, ContentViewState>
-  >({});
-  const [contentRemoval, setContentRemoval] = useState<ContentRemoval | null>(
-    null,
-  );
-  const [contentStatus, setContentStatus] = useState<ContentStatus | null>(
-    null,
-  );
-  const [contentFocusTarget, setContentFocusTarget] = useState<string | null>(
-    null,
-  );
+  const [tab, setTab] = useState<StudioTab>("content");
+  const [view, setView] = useState<WorkspaceView>("studio");
+  const [notice, setNotice] = useState<StudioNotice | null>(null);
+  const [showAudit, setShowAudit] = useState(false);
+  const [undoStack, setUndoStack] = useState<HistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [showTools, setShowTools] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
+  const initialPrefs = useMemo(() => loadUiPreferences(), []);
+  const [theme, setTheme] = useState<StudioTheme>(initialPrefs.theme);
+  const [editorWidthPct, setEditorWidthPct] = useState<number>(
+    initialPrefs.editorWidthPct,
+  );
+  const [previewZoom, setPreviewZoom] = useState<PreviewZoom>(
+    initialPrefs.previewZoom,
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    initialPrefs.sidebarCollapsed,
+  );
+  const [aiPromoDismissed, setAiPromoDismissed] = useState<boolean>(
+    initialPrefs.aiPromoDismissed,
+  );
+  const [focusRequest, setFocusRequest] = useState<EditorFocusRequest | null>(
+    null,
+  );
   const importInput = useRef<HTMLInputElement>(null);
-  const previewScroll = useRef<HTMLDivElement>(null);
-  const contentStatusSequence = useRef(0);
+  const resumeImportInput = useRef<HTMLInputElement>(null);
+  const studioGridRef = useRef<HTMLDivElement>(null);
+
   const resume = workspace?.resumes.find(
     (item) => item.id === workspace.activeResumeId,
   );
-  const blocked =
-    busy === "generate" ||
-    busy === "analyze" ||
-    busy === "refine" ||
-    busy === "review" ||
-    busy === "draft" ||
-    busy === "login";
-  // `HighlightGuidance` and `CopilotPanel` are reference-only panels that do not
-  // know about the batch review request. Map it onto an existing truthy value so
-  // their controls stay disabled while a review runs, without widening or
-  // contradicting their own busy vocabulary.
-  const panelBusy = busy === "review" || busy === "draft" ? "status" : busy;
-
+  const resumeSnapshot = useMemo(
+    () => (resume ? JSON.stringify(resume) : ""),
+    [resume],
+  );
   const report = (error: unknown) =>
     setNotice({ kind: "error", text: errorMessage(error) });
 
-  function announceContentStatus(message: string) {
-    contentStatusSequence.current += 1;
-    setContentStatus({
-      sequence: contentStatusSequence.current,
-      message,
-    });
-  }
-
-  const highlights = useHighlightGuidance({
-    resume,
-    status: copilot,
-    busy,
-    panelBusy,
-    setBusy,
-    report,
-    notify: setNotice,
-    changeResume,
-    setUndo,
-    announce: announceContentStatus,
-  });
-  const { resetApr, resetHighlightReviews } = highlights;
-  const drafts = useHighlightDrafts({
-    resume,
-    status: copilot,
-    busy,
-    setBusy,
-    report,
-    notify: setNotice,
-    changeResume,
-    setUndo,
-  });
-  const generation = useResumeGeneration({
-    resume,
-    setBusy,
-    report,
-    notify: setNotice,
-    changeResume,
-    setUndo,
-  });
-  const { exporting, exportPdf, exportBackup, importBackup } =
-    useWorkspaceTransfer({
-      workspace,
-      resume,
-      update,
-      report,
-      notify: setNotice,
-      onImported: () => {
-        generation.reset();
-        setUndo(null);
-        resetApr();
-        resetHighlightReviews();
-        drafts.reset();
-        setLibrary(false);
-      },
-    });
-
-  async function refreshCopilot() {
-    setBusy("status");
-    try {
-      setCopilot(await copilotStatus());
-    } catch (error) {
-      report(error);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  useEffect(() => {
-    copilotStatus()
-      .then(setCopilot, (error: unknown) =>
-        setNotice({ kind: "error", text: errorMessage(error) }),
-      )
-      .finally(() => setBusy(null));
-  }, []);
-
-  useEffect(() => {
-    if (!contentRemoval) return;
-    const remaining = Math.max(0, contentRemoval.expiresAt - Date.now());
-    const timer = window.setTimeout(() => setContentRemoval(null), remaining);
-    return () => window.clearTimeout(timer);
-  }, [contentRemoval]);
-
-  const resumeId = resume?.id;
-  useEffect(() => {
-    if (resumeId && previewScroll.current) previewScroll.current.scrollTop = 0;
-  }, [resumeId]);
-
-  function selectWorkspaceMode(next: WorkspaceMode, focusTab = false) {
-    setTab(next);
-    if (!focusTab) return;
-    const tabElement = document.getElementById(`tab-${next}`);
-    tabElement?.focus();
-    tabElement?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-  }
-
-  function commitResume(next: Resume) {
+  function applyResumeDirect(next: Resume) {
     update((current) => ({
       ...current,
       resumes: current.resumes.map((item) =>
@@ -220,104 +112,44 @@ function App() {
     }));
   }
 
-  function changeResume(next: Resume) {
-    commitResume(next);
-    setUndo(null);
-    setContentRemoval(null);
+  function recordHistory(
+    previous: Resume,
+    source: HistoryEntry["source"],
+    discrete = false,
+  ) {
+    const now = Date.now();
+    setUndoStack((stack) => {
+      const last = stack[stack.length - 1];
+      if (
+        !discrete &&
+        source === "edit" &&
+        last?.source === "edit" &&
+        last.resume.id === previous.id &&
+        now - last.timestamp < 700
+      ) {
+        return stack;
+      }
+      return [
+        ...stack.slice(-39),
+        { resume: structuredClone(previous), source, timestamp: now },
+      ];
+    });
+    setRedoStack([]);
   }
 
-  function changeContentView(next: ContentViewState) {
-    if (
-      resume &&
-      next.selectedExperienceId !==
-        reconcileContentView(resume, contentViews[resume.id])
-          .selectedExperienceId
-    ) {
-      resetApr();
-      drafts.reset();
-    }
-
-    if (!resume) return;
-    setContentViews((current) => ({ ...current, [resume.id]: next }));
+  function clearHistory() {
+    setUndoStack([]);
+    setRedoStack([]);
   }
 
-  function navigateFromAudit(target: AuditFinding["target"]) {
-    if (!resume) return;
-    if (target.workspace === "copilot") {
-      document.getElementById(target.focusId)?.focus();
-      return;
-    }
-    selectWorkspaceMode("content", true);
-    setContentViews((current) => ({
-      ...current,
-      [resume.id]: {
-        ...reconcileContentView(resume, current[resume.id]),
-        section: target.section,
-      },
-    }));
-    setContentFocusTarget(target.focusId ?? `content-tab-${target.section}`);
-  }
-
-  function applyContentChange(current: Resume, change: ContentChange) {
-    const { view } = change;
-    if (view) {
-      setContentViews((views) => ({
-        ...views,
-        [current.id]: {
-          ...reconcileContentView(current, views[current.id]),
-          ...view,
-        },
-      }));
-    }
-    if (change.resetsGuidance) {
-      resetApr();
-      drafts.reset();
-    }
-    commitResume(change.next);
-    setUndo(null);
-  }
-
-  function removeContent(request: ContentRemovalRequest) {
-    if (!resume) return;
-    const change = removeContentItem(resume, request);
-    if (!change) {
-      report(new Error("The experience for this highlight no longer exists."));
-      return;
-    }
-    applyContentChange(resume, change);
-    setContentRemoval(contentRemovalRecord(request, resume.id));
-    announceContentStatus(`Removed ${request.label}.`);
-    setContentFocusTarget(change.focusTarget);
-  }
-
-  function undoContentRemoval() {
-    if (!resume || !contentRemoval || contentRemoval.resumeId !== resume.id) {
-      setContentRemoval(null);
-      return;
-    }
-    selectWorkspaceMode("content");
-    const change = restoreContentItem(resume, contentRemoval);
-    if (!change) {
-      setContentRemoval(null);
-      report(new Error("The experience for this highlight no longer exists."));
-      return;
-    }
-    applyContentChange(resume, change);
-    setContentRemoval(null);
-    announceContentStatus(`Restored ${contentRemoval.label}.`);
-    setContentFocusTarget(change.focusTarget);
-  }
-
-  function selectResume(id: string) {
-    update((current) => ({ ...current, activeResumeId: id }));
-    setLibrary(false);
-    generation.reset();
-    highlights.clearAprConsent();
-    setUndo(null);
-    setContentRemoval(null);
-    resetHighlightReviews();
-    drafts.reset();
-  }
+  const ai = useStudioAiWorkflows({
+    resume,
+    resumeSnapshot,
+    applyResumeDirect,
+    recordAiHistory: (previous) => recordHistory(previous, "ai", true),
+    setNotice,
+    report,
+  });
 
   function addResume(next = createResume()) {
     if (!workspace || workspace.resumes.length >= 50) {
@@ -333,30 +165,145 @@ function App() {
       activeResumeId: next.id,
       resumes: [...current.resumes, next],
     }));
-    setLibrary(false);
-    selectWorkspaceMode("content");
-    generation.reset();
-    setUndo(null);
-    setContentRemoval(null);
-    resetApr();
-    resetHighlightReviews();
-    drafts.reset();
+    setView("studio");
+    setTab("content");
+    ai.resetAiTransientForResumeSwitch(true);
+    clearHistory();
   }
 
-  async function login() {
-    setBusy("login");
-    try {
-      await loginToCopilot();
+  const io = useResumeDocumentIo({
+    workspace,
+    resume,
+    update,
+    addResume,
+    resetAiForImport: () => ai.resetAiTransientForResumeSwitch(true),
+    clearHistory,
+    setViewStudio: () => setView("studio"),
+    setAiBusy: ai.setBusy,
+    setNotice,
+    report,
+  });
+
+  const blocked =
+    ai.busy === "generate" ||
+    ai.busy === "summaryOptions" ||
+    ai.busy === "tailorRole" ||
+    ai.busy === "importCleanup" ||
+    ai.busy === "analyze" ||
+    ai.busy === "refine" ||
+    ai.busy === "login";
+  const topUndo = undoStack[undoStack.length - 1] ?? null;
+  const topRedo = redoStack[redoStack.length - 1] ?? null;
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    saveUiPreferences({
+      theme,
+      editorWidthPct,
+      previewZoom,
+      sidebarCollapsed,
+      aiPromoDismissed,
+    });
+  }, [theme, editorWidthPct, previewZoom, sidebarCollapsed, aiPromoDismissed]);
+
+  function changeResume(next: Resume, meta?: ChangeMeta) {
+    if (resume && resume.id === next.id) {
+      recordHistory(
+        resume,
+        meta?.deletedLabel ? "delete" : "edit",
+        Boolean(meta?.discrete || meta?.deletedLabel),
+      );
+    }
+    applyResumeDirect(next);
+    if (meta?.deletedLabel) {
       setNotice({
         kind: "success",
-        text: "GitHub sign-in completed. You can now request a resume rewrite.",
+        text: `Removed ${meta.deletedLabel}.`,
+        canUndo: true,
       });
-      setCopilot(await copilotStatus());
-    } catch (error) {
-      report(error);
-    } finally {
-      setBusy(null);
     }
+  }
+
+  function performUndo() {
+    if (!resume || !topUndo || blocked) return;
+    setUndoStack((stack) => stack.slice(0, -1));
+    setRedoStack((stack) => [
+      ...stack.slice(-39),
+      {
+        resume: structuredClone(resume),
+        source: topUndo.source,
+        timestamp: Date.now(),
+      },
+    ]);
+    applyResumeDirect(topUndo.resume);
+    setNotice({
+      kind: "success",
+      text:
+        topUndo.source === "ai"
+          ? "Previous wording restored."
+          : "Last change undone.",
+    });
+  }
+
+  function performRedo() {
+    if (!resume || !topRedo || blocked) return;
+    setRedoStack((stack) => stack.slice(0, -1));
+    setUndoStack((stack) => [
+      ...stack.slice(-39),
+      {
+        resume: structuredClone(resume),
+        source: topRedo.source,
+        timestamp: Date.now(),
+      },
+    ]);
+    applyResumeDirect(topRedo.resume);
+    setNotice({
+      kind: "success",
+      text: "Change restored.",
+    });
+  }
+
+  useEffect(() => {
+    const onGlobalKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) return;
+      if (event.key === "\\") {
+        event.preventDefault();
+        setSidebarCollapsed((current) => !current);
+        return;
+      }
+      if (blocked || view !== "studio") return;
+      const active = document.activeElement;
+      const isTextControl =
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement;
+      if (isTextControl) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        if (topUndo) {
+          event.preventDefault();
+          performUndo();
+        }
+      } else if ((key === "z" && event.shiftKey) || key === "y") {
+        if (topRedo) {
+          event.preventDefault();
+          performRedo();
+        }
+      }
+    };
+    window.addEventListener("keydown", onGlobalKeyDown);
+    return () => window.removeEventListener("keydown", onGlobalKeyDown);
+  });
+
+  function selectResume(id: string) {
+    update((current) => ({ ...current, activeResumeId: id }));
+    setView("studio");
+    ai.resetAiTransientForResumeSwitch(false);
+    clearHistory();
   }
 
   function removeResume() {
@@ -372,229 +319,267 @@ function App() {
           : workspace.activeResumeId,
     });
     setDeleteId(null);
-    generation.reset();
-    resetApr();
-    resetHighlightReviews();
-    drafts.reset();
-    setUndo(null);
-    setContentRemoval(null);
-    setContentViews((current) => {
-      const next = { ...current };
-      delete next[deleteId];
-      return next;
-    });
+    ai.resetAiTransientForResumeSwitch(true);
+    clearHistory();
   }
 
   if (!workspace || !resume) {
     return (
-      <main className="loading-screen">
-        <img src="/hireloom.svg" width="60" height="60" alt="" />
-        <h1>Hireloom</h1>
-        {loadError ? (
-          <div className="load-error" role="alert">
-            <h2>We couldn't open your workspace.</h2>
-            <p>{loadError}</p>
-            <p>
-              Your saved data has not been changed. Restore or repair your
-              backup before continuing.
-            </p>
-            <button className="button primary" onClick={() => void reload()}>
-              Try again
-            </button>
-          </div>
-        ) : (
-          <p>
-            <LoaderCircle size={18} className="spin" /> Opening your next
-            chapter…
-          </p>
-        )}
-      </main>
+      <LoadingScreen loadError={loadError} onReload={() => void reload()} />
     );
   }
 
-  const allBusy = blocked || exporting;
-  const contentView = reconcileContentView(resume, contentViews[resume.id]);
+  const careerLibraryCount =
+    workspace.careerLibrary.experiences.length +
+    workspace.careerLibrary.projects.length +
+    workspace.careerLibrary.education.length +
+    workspace.careerLibrary.certifications.length +
+    workspace.careerLibrary.skillGroups.length;
+  const allBusy = blocked || Boolean(io.exporting) || io.importingFile;
+
+  const jumpToEditorSection = (
+    section: SectionKey | "basics",
+    entryId?: string,
+  ) => {
+    setTab("content");
+    setFocusRequest({ section, entryId, nonce: Date.now() });
+  };
+
+  const handleSplitterPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const grid = studioGridRef.current;
+    if (!grid) return;
+    event.preventDefault();
+    const target = event.currentTarget;
+    target.setPointerCapture(event.pointerId);
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const rect = grid.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const pct = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      setEditorWidthPct(Math.min(58, Math.max(28, pct)));
+    };
+    const onUp = () => {
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onUp);
+      target.removeEventListener("pointercancel", onUp);
+    };
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onUp);
+    target.addEventListener("pointercancel", onUp);
+  };
+
+  const duplicateResume = (item: Resume) =>
+    addResume({
+      ...structuredClone(item),
+      id: crypto.randomUUID(),
+      title: `${item.title.slice(0, 110)} (copy)`,
+      updatedAt: new Date().toISOString(),
+    });
+
+  const toggleTheme = () =>
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
 
   return (
-    <div className="app-shell">
-      <Sidebar
-        resumes={workspace.resumes}
-        activeResumeId={resume.id}
-        library={library}
-        blocked={blocked}
+    <div
+      className={`app-shell ${view === "studio" ? "app-shell--studio" : ""} ${sidebarCollapsed ? "app-shell--sidebar-collapsed" : ""}`}
+    >
+      <StudioSidebar
+        workspace={workspace}
+        resume={resume}
+        view={view}
+        careerLibraryCount={careerLibraryCount}
         allBusy={allBusy}
-        onShowLibrary={setLibrary}
-        onNewResume={() => addResume()}
+        collapsed={sidebarCollapsed}
+        aiPromoDismissed={aiPromoDismissed}
+        onSetView={setView}
+        onAddResume={() => addResume()}
         onSelectResume={selectResume}
-        onMeetCopilot={() => {
+        onOpenCopilotTab={() => {
           setTab("copilot");
-          setLibrary(false);
+          setView("studio");
         }}
+        onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+        onDismissAiPromo={() => setAiPromoDismissed(true)}
       />
       <main className="main-content">
-        <WorkspaceHeader
-          library={library}
-          name={resume.basics.name}
-          notice={notice}
-          onDismissNotice={() => setNotice(null)}
-          saveError={saveError}
-          onRetrySave={() => void flush().catch(report)}
-          onExportBackup={() => void exportBackup()}
-        />
-        {library ? (
-          <ResumeLibrary
+        {view !== "studio" && (
+          <StudioTopbar
+            view={view}
+            theme={theme}
+            candidateInitial={
+              resume.basics.name.slice(0, 1).toUpperCase() || "H"
+            }
+            onToggleTheme={toggleTheme}
+          />
+        )}
+        {notice && (
+          <NoticeBanner
+            notice={notice}
+            canUndo={Boolean(topUndo)}
+            onUndo={performUndo}
+            onDismiss={() => setNotice(null)}
+          />
+        )}
+        {saveError && (
+          <SaveErrorBanner
+            saveError={saveError}
+            onRetrySave={() => void flush().catch(report)}
+            onExportBackup={() => void io.exportBackup()}
+          />
+        )}
+        {view !== "studio" && <WorkspaceHeading view={view} />}
+        {view === "careerLibrary" ? (
+          <CareerLibraryView
+            library={workspace.careerLibrary}
+            activeResume={resume}
+            resumeCount={workspace.resumes.length}
+            onUpdateLibrary={(careerLibrary) =>
+              update((current) => ({ ...current, careerLibrary }))
+            }
+            onSyncFromActiveResume={() => {
+              try {
+                update((current) =>
+                  syncResumeToCareerLibrary(current, resume.id),
+                );
+                setNotice({
+                  kind: "success",
+                  text: "Saved roles, projects, education, certifications, and skill groups to your Career Library.",
+                });
+              } catch (error) {
+                report(error);
+              }
+            }}
+            onCreateTailoredResume={(variant) => {
+              addResume(variant);
+              setNotice({
+                kind: "success",
+                text: `Created tailored resume “${variant.title}” from your Career Library.`,
+              });
+            }}
+          />
+        ) : view === "resumes" ? (
+          <ResumeLibraryView
             resumes={workspace.resumes}
-            onImport={() => importInput.current?.click()}
-            onExportBackup={() => void exportBackup()}
-            onSelect={selectResume}
-            onDuplicate={(item) => addResume(copyOf(item))}
-            onDelete={setDeleteId}
-            onNew={() => addResume()}
+            allBusy={allBusy}
+            onSelectResume={selectResume}
+            onAddResume={() => addResume()}
+            onDuplicateResume={duplicateResume}
+            onRequestDeleteResume={setDeleteId}
+            onTriggerResumeImport={() => resumeImportInput.current?.click()}
+            onTriggerBackupImport={() => importInput.current?.click()}
+            onExportBackup={() => void io.exportBackup()}
           />
         ) : (
           <section className="studio-frame" aria-label="Resume studio">
-            <DocumentToolbar
+            <StudioDocumentToolbar
               resume={resume}
-              onChange={changeResume}
+              theme={theme}
               blocked={blocked}
               allBusy={allBusy}
               saving={saving}
               dirty={dirty}
               saveError={saveError}
-              canUndo={undo !== null}
-              onUndo={() => {
-                if (!undo) return;
-                changeResume(undo);
-                setNotice({
-                  kind: "success",
-                  text: "Previous wording restored.",
-                });
+              exporting={io.exporting}
+              topUndoSource={topUndo?.source ?? null}
+              hasRedo={Boolean(topRedo)}
+              onToggleTheme={toggleTheme}
+              onChangeResume={changeResume}
+              onUndo={performUndo}
+              onRedo={performRedo}
+              onDuplicateResume={() => duplicateResume(resume)}
+              onTriggerResumeImport={() => resumeImportInput.current?.click()}
+              onSaveToCareerLibrary={() => {
+                try {
+                  update((current) =>
+                    syncResumeToCareerLibrary(current, resume.id),
+                  );
+                  setNotice({
+                    kind: "success",
+                    text: "Synced current resume items to your Career Library.",
+                  });
+                } catch (error) {
+                  report(error);
+                }
               }}
-              showTools={showTools}
-              onShowTools={setShowTools}
-              onDuplicate={() => addResume(copyOf(resume))}
-              onBackup={() => void exportBackup()}
-              onImport={() => importInput.current?.click()}
-              onDelete={() => setDeleteId(resume.id)}
-              exporting={exporting}
-              onExportPdf={() => void exportPdf()}
+              onExportBackup={() => void io.exportBackup()}
+              onTriggerBackupImport={() => importInput.current?.click()}
+              onRequestDeleteResume={() => setDeleteId(resume.id)}
+              onExportDocx={() => void io.exportDocx()}
+              onExportPdf={() => void io.exportPdf()}
             />
-            <div className="studio">
-              <WorkspaceTabs
+            <div
+              className="studio"
+              ref={studioGridRef}
+              style={
+                {
+                  "--editor-pane-width": `${editorWidthPct}%`,
+                } as React.CSSProperties
+              }
+            >
+              <StudioEditPane
+                resume={resume}
+                resumeSnapshot={resumeSnapshot}
+                careerLibrary={workspace.careerLibrary}
                 tab={tab}
-                blocked={blocked}
-                onSelect={selectWorkspaceMode}
+                focusRequest={focusRequest}
+                ai={ai}
+                onSetTab={setTab}
+                onChangeResume={changeResume}
+                onAddResume={addResume}
+                onTriggerResumeImport={() => resumeImportInput.current?.click()}
+                onUpdateWorkspace={update}
+                onSetNotice={setNotice}
+                onReport={report}
+                onShowLicense={() => setShowLicense(true)}
               />
-              {contentRemoval?.resumeId === resume.id && (
-                <div className="content-undo">
-                  <span>Removed {contentRemoval.label}.</span>
-                  <button className="text-button" onClick={undoContentRemoval}>
-                    Undo
-                  </button>
-                </div>
-              )}
-              <span
-                className="sr-only"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-              >
-                {contentStatus && (
-                  <span key={contentStatus.sequence}>
-                    {contentStatus.message}
-                  </span>
-                )}
-              </span>
-              <div className="workspace-panels">
-                <div
-                  className="workspace-panel content-panel"
-                  role="tabpanel"
-                  id="panel-content"
-                  aria-labelledby="tab-content"
-                  hidden={tab !== "content"}
-                >
-                  <Editor
-                    resume={resume}
-                    onChange={changeResume}
-                    onAi={() => selectWorkspaceMode("copilot", true)}
-                    onExample={() => addResume(exampleResume())}
-                    viewState={contentView}
-                    onViewStateChange={changeContentView}
-                    onRemove={removeContent}
-                    focusTarget={contentFocusTarget}
-                    onFocusTargetHandled={() => setContentFocusTarget(null)}
-                    highlightGuidance={highlights.guidance}
-                    highlightReview={highlights.review}
-                    highlightDrafts={drafts.controller}
-                  />
-                </div>
-                <div
-                  className="workspace-panel tool-panel-scroll"
-                  role="tabpanel"
-                  id="panel-copilot"
-                  aria-labelledby="tab-copilot"
-                  hidden={tab !== "copilot"}
-                >
-                  <fieldset
-                    className="assistant-fieldset"
-                    disabled={busy === "generate" || busy === "analyze"}
-                  >
-                    <CopilotPanel
-                      resume={resume}
-                      onChange={changeResume}
-                      status={copilot}
-                      busy={panelBusy}
-                      consent={generation.consent}
-                      onConsent={generation.setConsent}
-                      onRefresh={() => void refreshCopilot()}
-                      onLogin={() => void login()}
-                      onGenerate={() => void generation.generate()}
-                      proposal={generation.proposal}
-                      stale={generation.stale}
-                      onApply={generation.apply}
-                      onDiscard={generation.discard}
-                      onAuditNavigate={navigateFromAudit}
-                    />
-                  </fieldset>
-                </div>
-                <div
-                  className="workspace-panel tool-panel-scroll"
-                  role="tabpanel"
-                  id="panel-style"
-                  aria-labelledby="tab-style"
-                  hidden={tab !== "style"}
-                >
-                  <StylePanel resume={resume} onChange={changeResume} />
-                </div>
-                <div
-                  className="workspace-panel preview-pane"
-                  role="tabpanel"
-                  id="panel-preview"
-                  aria-labelledby="tab-preview"
-                  hidden={tab !== "preview"}
-                >
-                  <PreviewPanel
-                    resume={resume}
-                    blocked={blocked}
-                    onChangeDesign={() => selectWorkspaceMode("style", true)}
-                    scrollRef={previewScroll}
-                  />
-                </div>
-              </div>
-              <div className="editor-footer">
-                <LockKeyhole size={12} /> No account needed to create, save, or
-                export.
-              </div>
+              <div
+                className="pane-resizer"
+                role="separator"
+                aria-label="Resize editor and preview panes"
+                aria-orientation="vertical"
+                aria-valuemin={28}
+                aria-valuemax={58}
+                aria-valuenow={Math.round(editorWidthPct)}
+                tabIndex={0}
+                onPointerDown={handleSplitterPointerDown}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowLeft") {
+                    event.preventDefault();
+                    setEditorWidthPct((w) => Math.max(28, w - 3));
+                  } else if (event.key === "ArrowRight") {
+                    event.preventDefault();
+                    setEditorWidthPct((w) => Math.min(58, w + 3));
+                  }
+                }}
+              />
+              <StudioPreviewPane
+                resume={resume}
+                resumes={workspace.resumes}
+                careerLibrary={workspace.careerLibrary}
+                previewZoom={previewZoom}
+                showAudit={showAudit}
+                onSetPreviewZoom={setPreviewZoom}
+                onSetShowAudit={setShowAudit}
+                onSetTab={setTab}
+                onSelectSection={jumpToEditorSection}
+              />
             </div>
           </section>
         )}
-        <footer className="page-footer">
-          <span>Thoughtfully crafted. Authentically you.</span>
-          <button className="text-button" onClick={() => setShowLicense(true)}>
-            Font licenses
-          </button>
-          <span>HIRING IS HUMAN. YOUR RESUME SHOULD BE, TOO.</span>
-        </footer>
+        {view !== "studio" && (
+          <footer className="page-footer">
+            <span>Thoughtfully crafted. Authentically you.</span>
+            <button
+              className="text-button"
+              onClick={() => setShowLicense(true)}
+            >
+              Font licenses
+            </button>
+            <span>HIRING IS HUMAN. YOUR RESUME SHOULD BE, TOO.</span>
+          </footer>
+        )}
       </main>
       <input
         className="visually-hidden"
@@ -602,9 +587,39 @@ function App() {
         type="file"
         accept=".json,application/json"
         aria-label="Import Hireloom backup"
-        onChange={(event) => void importBackup(event)}
+        onChange={(event) => void io.importBackup(event)}
         tabIndex={-1}
       />
+      <input
+        className="visually-hidden"
+        ref={resumeImportInput}
+        type="file"
+        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        aria-label="Import PDF or DOCX resume"
+        onChange={(event) => void io.importResumeDocument(event)}
+        tabIndex={-1}
+      />
+      {io.importDraft && (
+        <ImportReviewDialog
+          draft={io.importDraft}
+          providerLabel={PROVIDER_LABELS[ai.aiSettings.primaryProvider]}
+          providerReady={
+            desktop &&
+            (ai.aiSettings.primaryProvider === "copilot"
+              ? Boolean(ai.copilot?.available)
+              : (ai.providerStates.find(
+                  (item) => item.provider === ai.aiSettings.primaryProvider,
+                )?.configured ?? ai.aiSettings.primaryProvider === "ollama"))
+          }
+          cleaningUp={ai.busy === "importCleanup"}
+          onCleanUpWithAi={(importConsent) =>
+            void io.cleanUpImportWithAi(importConsent)
+          }
+          onCancelAiCleanup={() => void io.cancelImportCleanup()}
+          onCancel={() => io.setImportDraft(null)}
+          onConfirm={io.confirmImportedResume}
+        />
+      )}
       {deleteId && (
         <DeleteDialog
           title={
