@@ -7,6 +7,7 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  formatYearMonth,
   isExperienceOutOfSync,
   type AprTarget,
   type CareerLibrary,
@@ -26,8 +27,10 @@ export function ExperienceSection({
   badgeNumber,
   open,
   onToggleSection,
-  collapsedIds,
+  isEntryCollapsed,
   onToggleCollapsed,
+  onSetManyCollapsed,
+  onExpandEntry,
   onChange,
   onCoachBullet,
   careerLibrary,
@@ -38,8 +41,10 @@ export function ExperienceSection({
   badgeNumber: string;
   open: boolean;
   onToggleSection: (event: React.SyntheticEvent<HTMLDetailsElement>) => void;
-  collapsedIds: Record<string, boolean>;
-  onToggleCollapsed: (id: string) => void;
+  isEntryCollapsed: (id: string, index: number) => boolean;
+  onToggleCollapsed: (id: string, index: number) => void;
+  onSetManyCollapsed: (ids: string[], collapsed: boolean) => void;
+  onExpandEntry: (id: string) => void;
   onChange: (resume: Resume, meta?: ChangeMeta) => void;
   onCoachBullet?: (target: AprTarget) => void;
   careerLibrary?: CareerLibrary;
@@ -53,6 +58,10 @@ export function ExperienceSection({
         entry.id === id ? { ...entry, ...patch } : entry,
       ),
     });
+
+  const allCollapsed =
+    resume.experience.length > 0 &&
+    resume.experience.every((entry, idx) => isEntryCollapsed(entry.id, idx));
 
   return (
     <details
@@ -69,9 +78,32 @@ export function ExperienceSection({
         <span className="section-number">{badgeNumber}</span>
       </summary>
       <div className="section-fields">
+        {resume.experience.length > 1 && (
+          <div className="section-bulk-bar">
+            <span className="section-bulk-hint">
+              Click a position header to expand or collapse
+            </span>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                onSetManyCollapsed(
+                  resume.experience.map((e) => e.id),
+                  !allCollapsed,
+                )
+              }
+            >
+              {allCollapsed ? "Expand all" : "Collapse all"}
+            </button>
+          </div>
+        )}
         {resume.experience.map((entry, index) => {
-          const isCollapsed = Boolean(collapsedIds[entry.id]);
-          const summaryTitle = [entry.role, entry.company]
+          const isCollapsed = isEntryCollapsed(entry.id, index);
+          const dateSpan = [entry.startDate, entry.endDate]
+            .filter(Boolean)
+            .map(formatYearMonth)
+            .join(" – ");
+          const summaryTitle = [entry.role, entry.company, dateSpan]
             .filter((v) => v.trim())
             .join(" · ");
           return (
@@ -81,21 +113,28 @@ export function ExperienceSection({
               data-entry-id={entry.id}
             >
               <div className="entry-topline">
-                <strong className="entry-card-title">
-                  Position {index + 1}
-                  {summaryTitle ? (
-                    <span className="entry-card-subtitle">
-                      {" "}
-                      · {summaryTitle}
-                    </span>
-                  ) : null}
-                </strong>
+                <button
+                  type="button"
+                  className="entry-card-title-btn"
+                  aria-expanded={!isCollapsed}
+                  onClick={() => onToggleCollapsed(entry.id, index)}
+                >
+                  <strong className="entry-card-title">
+                    Position {index + 1}
+                    {summaryTitle ? (
+                      <span className="entry-card-subtitle">
+                        {" "}
+                        · {summaryTitle}
+                      </span>
+                    ) : null}
+                  </strong>
+                </button>
                 <EntryControls
                   label={`position ${index + 1}`}
                   index={index}
                   length={resume.experience.length}
                   collapsed={isCollapsed}
-                  onToggleCollapse={() => onToggleCollapsed(entry.id)}
+                  onToggleCollapse={() => onToggleCollapsed(entry.id, index)}
                   onMove={(direction) =>
                     onChange(
                       {
@@ -124,18 +163,20 @@ export function ExperienceSection({
               </div>
               {!isCollapsed && (
                 <>
-                  <Field
-                    label={`Job title ${index + 1}`}
-                    value={entry.role}
-                    onChange={(role) => experience(entry.id, { role })}
-                    placeholder="Senior Product Designer"
-                  />
-                  <Field
-                    label={`Company ${index + 1}`}
-                    value={entry.company}
-                    onChange={(company) => experience(entry.id, { company })}
-                    placeholder="Company name"
-                  />
+                  <div className="field-grid">
+                    <Field
+                      label={`Job title ${index + 1}`}
+                      value={entry.role}
+                      onChange={(role) => experience(entry.id, { role })}
+                      placeholder="Senior Product Designer"
+                    />
+                    <Field
+                      label={`Company ${index + 1}`}
+                      value={entry.company}
+                      onChange={(company) => experience(entry.id, { company })}
+                      placeholder="Company name"
+                    />
+                  </div>
                   <Field
                     label={`Work location ${index + 1}`}
                     value={entry.location}
@@ -163,7 +204,7 @@ export function ExperienceSection({
                         label={`Highlight ${index + 1}.${bulletIndex + 1}`}
                         value={text}
                         multiline
-                        rows={3}
+                        rows={2}
                         maxLength={2_000}
                         placeholder="What did you do, and what changed because of it?"
                         onChange={(value) =>
@@ -283,14 +324,16 @@ export function ExperienceSection({
           type="button"
           className="add-button"
           disabled={resume.experience.length >= 30}
-          onClick={() =>
+          onClick={() => {
+            const id = crypto.randomUUID();
+            onExpandEntry(id);
             onChange(
               {
                 ...resume,
                 experience: [
                   ...resume.experience,
                   {
-                    id: crypto.randomUUID(),
+                    id,
                     role: "",
                     company: "",
                     location: "",
@@ -301,8 +344,8 @@ export function ExperienceSection({
                 ],
               },
               { discrete: true },
-            )
-          }
+            );
+          }}
         >
           <Plus size={16} /> Add experience
         </button>

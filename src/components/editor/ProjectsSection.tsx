@@ -27,8 +27,10 @@ export function ProjectsSection({
   badgeNumber,
   open,
   onToggleSection,
-  collapsedIds,
+  isEntryCollapsed,
   onToggleCollapsed,
+  onSetManyCollapsed,
+  onExpandEntry,
   onChange,
   onCoachBullet,
   careerLibrary,
@@ -39,8 +41,10 @@ export function ProjectsSection({
   badgeNumber: string;
   open: boolean;
   onToggleSection: (event: React.SyntheticEvent<HTMLDetailsElement>) => void;
-  collapsedIds: Record<string, boolean>;
-  onToggleCollapsed: (id: string) => void;
+  isEntryCollapsed: (id: string, index: number) => boolean;
+  onToggleCollapsed: (id: string, index: number) => void;
+  onSetManyCollapsed: (ids: string[], collapsed: boolean) => void;
+  onExpandEntry: (id: string) => void;
   onChange: (resume: Resume, meta?: ChangeMeta) => void;
   onCoachBullet?: (target: AprTarget) => void;
   careerLibrary?: CareerLibrary;
@@ -54,6 +58,10 @@ export function ProjectsSection({
         entry.id === id ? { ...entry, ...patch } : entry,
       ),
     });
+
+  const allCollapsed =
+    resume.projects.length > 0 &&
+    resume.projects.every((entry, idx) => isEntryCollapsed(entry.id, idx));
 
   return (
     <details
@@ -70,8 +78,27 @@ export function ProjectsSection({
         <span className="section-number">{badgeNumber}</span>
       </summary>
       <div className="section-fields">
+        {resume.projects.length > 1 && (
+          <div className="section-bulk-bar">
+            <span className="section-bulk-hint">
+              Click a project header to expand or collapse
+            </span>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() =>
+                onSetManyCollapsed(
+                  resume.projects.map((p) => p.id),
+                  !allCollapsed,
+                )
+              }
+            >
+              {allCollapsed ? "Expand all" : "Collapse all"}
+            </button>
+          </div>
+        )}
         {resume.projects.map((entry, index) => {
-          const isCollapsed = Boolean(collapsedIds[entry.id]);
+          const isCollapsed = isEntryCollapsed(entry.id, index);
           return (
             <div
               className={`entry-card ${isCollapsed ? "collapsed" : ""}`}
@@ -79,21 +106,28 @@ export function ProjectsSection({
               data-entry-id={entry.id}
             >
               <div className="entry-topline">
-                <strong className="entry-card-title">
-                  Project {index + 1}
-                  {entry.name.trim() ? (
-                    <span className="entry-card-subtitle">
-                      {" "}
-                      · {entry.name.trim()}
-                    </span>
-                  ) : null}
-                </strong>
+                <button
+                  type="button"
+                  className="entry-card-title-btn"
+                  aria-expanded={!isCollapsed}
+                  onClick={() => onToggleCollapsed(entry.id, index)}
+                >
+                  <strong className="entry-card-title">
+                    Project {index + 1}
+                    {entry.name.trim() ? (
+                      <span className="entry-card-subtitle">
+                        {" "}
+                        · {entry.name.trim()}
+                      </span>
+                    ) : null}
+                  </strong>
+                </button>
                 <EntryControls
                   label={`project ${index + 1}`}
                   index={index}
                   length={resume.projects.length}
                   collapsed={isCollapsed}
-                  onToggleCollapse={() => onToggleCollapsed(entry.id)}
+                  onToggleCollapse={() => onToggleCollapsed(entry.id, index)}
                   onMove={(direction) =>
                     onChange(
                       {
@@ -122,18 +156,20 @@ export function ProjectsSection({
               </div>
               {!isCollapsed && (
                 <>
-                  <Field
-                    label={`Project name ${index + 1}`}
-                    value={entry.name}
-                    onChange={(name) => project(entry.id, { name })}
-                    placeholder="Open-source library, case study, or system"
-                  />
-                  <Field
-                    label={`Project role or stack ${index + 1}`}
-                    value={entry.subtitle}
-                    onChange={(subtitle) => project(entry.id, { subtitle })}
-                    placeholder="Creator · Rust, TypeScript, React"
-                  />
+                  <div className="field-grid">
+                    <Field
+                      label={`Project name ${index + 1}`}
+                      value={entry.name}
+                      onChange={(name) => project(entry.id, { name })}
+                      placeholder="Open-source library, case study, or system"
+                    />
+                    <Field
+                      label={`Project role or stack ${index + 1}`}
+                      value={entry.subtitle}
+                      onChange={(subtitle) => project(entry.id, { subtitle })}
+                      placeholder="Creator · Rust, TypeScript, React"
+                    />
+                  </div>
                   <Field
                     label={`Project URL ${index + 1}`}
                     value={entry.url}
@@ -160,7 +196,7 @@ export function ProjectsSection({
                         label={`Project highlight ${index + 1}.${bulletIndex + 1}`}
                         value={text}
                         multiline
-                        rows={3}
+                        rows={2}
                         maxLength={2_000}
                         placeholder="What problem did this project solve, and how?"
                         onChange={(value) =>
@@ -271,14 +307,16 @@ export function ProjectsSection({
           type="button"
           className="add-button"
           disabled={resume.projects.length >= 20}
-          onClick={() =>
+          onClick={() => {
+            const id = crypto.randomUUID();
+            onExpandEntry(id);
             onChange(
               {
                 ...resume,
                 projects: [
                   ...resume.projects,
                   {
-                    id: crypto.randomUUID(),
+                    id,
                     name: "",
                     subtitle: "",
                     url: "",
@@ -289,8 +327,8 @@ export function ProjectsSection({
                 ],
               },
               { discrete: true },
-            )
-          }
+            );
+          }}
         >
           <Plus size={16} /> Add project
         </button>

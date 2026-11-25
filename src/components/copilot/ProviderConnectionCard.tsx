@@ -5,6 +5,7 @@ import {
   Github,
   KeyRound,
   LoaderCircle,
+  RefreshCw,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -23,14 +24,31 @@ import {
 import { Field } from "../Editor";
 import type { AiBusyKind } from "./ProposalPrimitives";
 
+function mergeModelOptions(
+  fetched: readonly string[] | undefined,
+  currentModel: string,
+  fallback: readonly string[] = [],
+): string[] {
+  const base = fetched && fetched.length > 0 ? [...fetched] : [...fallback];
+  if (base.length === 0) return [];
+  if (currentModel && !base.includes(currentModel)) {
+    return [currentModel, ...base];
+  }
+  return base;
+}
+
 export function ProviderConnectionCard({
   status,
   aiSettings,
   providerStates,
+  availableModelsByProvider = {},
+  modelsLoading = {},
+  modelsError = {},
   providerReady,
   busy,
   defaultExpanded = false,
   onRefresh,
+  onRefreshModels,
   onLogin,
   onSaveAiSettings,
   onSaveApiKey,
@@ -39,42 +57,141 @@ export function ProviderConnectionCard({
   status: CopilotStatus | null;
   aiSettings: AiSettings;
   providerStates: ProviderCredentialStatus[];
+  availableModelsByProvider?: Partial<Record<ProviderKind, string[]>>;
+  modelsLoading?: Partial<Record<ProviderKind, boolean>>;
+  modelsError?: Partial<Record<ProviderKind, string>>;
   providerReady: boolean;
   busy: AiBusyKind;
   defaultExpanded?: boolean;
   onRefresh: () => void;
+  onRefreshModels?: (provider: ProviderKind, ollamaBaseUrl?: string) => void;
   onLogin: () => void;
   onSaveAiSettings?: (next: AiSettings) => void;
   onSaveApiKey?: (provider: ProviderKind, apiKey: string) => void;
   onClearApiKey?: (provider: ProviderKind) => void;
 }) {
   const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [primaryModelDraft, setPrimaryModelDraft] = useState(
+    aiSettings.primaryModel,
+  );
+  const [prevPrimaryModel, setPrevPrimaryModel] = useState(
+    aiSettings.primaryModel,
+  );
+  if (aiSettings.primaryModel !== prevPrimaryModel) {
+    setPrevPrimaryModel(aiSettings.primaryModel);
+    setPrimaryModelDraft(aiSettings.primaryModel);
+  }
+
+  const [verifierModelDraft, setVerifierModelDraft] = useState(
+    aiSettings.verifierModel,
+  );
+  const [prevVerifierModel, setPrevVerifierModel] = useState(
+    aiSettings.verifierModel,
+  );
+  if (aiSettings.verifierModel !== prevVerifierModel) {
+    setPrevVerifierModel(aiSettings.verifierModel);
+    setVerifierModelDraft(aiSettings.verifierModel);
+  }
+
+  const [ollamaUrlDraft, setOllamaUrlDraft] = useState(
+    aiSettings.ollamaBaseUrl,
+  );
+  const [prevOllamaUrl, setPrevOllamaUrl] = useState(aiSettings.ollamaBaseUrl);
+  if (aiSettings.ollamaBaseUrl !== prevOllamaUrl) {
+    setPrevOllamaUrl(aiSettings.ollamaBaseUrl);
+    setOllamaUrlDraft(aiSettings.ollamaBaseUrl);
+  }
+
   const activeProvider = aiSettings.primaryProvider;
   const activeProviderLabel = PROVIDER_LABELS[activeProvider];
   const activeProviderInfo = providerStates.find(
     (item) => item.provider === activeProvider,
   );
+  const primaryModelOptions = mergeModelOptions(
+    availableModelsByProvider[activeProvider],
+    aiSettings.primaryModel,
+    activeProvider === "copilot" ? COPILOT_MODELS : [],
+  );
+  const verifierModelOptions = mergeModelOptions(
+    availableModelsByProvider[aiSettings.verifierProvider],
+    aiSettings.verifierModel,
+    aiSettings.verifierProvider === "copilot" ? COPILOT_MODELS : [],
+  );
+  const primaryModelsLoading = Boolean(modelsLoading[activeProvider]);
+  const primaryModelsError = modelsError[activeProvider];
+  const verifierModelsLoading = Boolean(
+    modelsLoading[aiSettings.verifierProvider],
+  );
+  const verifierModelsError = modelsError[aiSettings.verifierProvider];
 
   const updateSettings = (patch: Partial<AiSettings>) => {
     if (!onSaveAiSettings) return;
     onSaveAiSettings({ ...aiSettings, ...patch });
   };
 
+  const commitPrimaryModelDraft = () => {
+    const trimmed = primaryModelDraft.trim();
+    if (!trimmed) {
+      setPrimaryModelDraft(aiSettings.primaryModel);
+      return;
+    }
+    if (trimmed !== aiSettings.primaryModel) {
+      updateSettings({ primaryModel: trimmed });
+    }
+  };
+
+  const commitVerifierModelDraft = () => {
+    const trimmed = verifierModelDraft.trim();
+    if (!trimmed) {
+      setVerifierModelDraft(aiSettings.verifierModel);
+      return;
+    }
+    if (trimmed !== aiSettings.verifierModel) {
+      updateSettings({ verifierModel: trimmed });
+    }
+  };
+
+  const commitOllamaUrlDraft = () => {
+    const trimmed = ollamaUrlDraft.trim();
+    if (!trimmed) {
+      setOllamaUrlDraft(aiSettings.ollamaBaseUrl);
+      return;
+    }
+    if (trimmed !== aiSettings.ollamaBaseUrl) {
+      updateSettings({ ollamaBaseUrl: trimmed });
+    }
+  };
+
   const switchPrimaryProvider = (provider: ProviderKind) => {
     setApiKeyDraft("");
+    const fetched = availableModelsByProvider[provider];
+    const nextModel =
+      fetched && fetched.length > 0
+        ? fetched.includes(DEFAULT_MODELS_BY_PROVIDER[provider])
+          ? DEFAULT_MODELS_BY_PROVIDER[provider]
+          : fetched[0]
+        : DEFAULT_MODELS_BY_PROVIDER[provider];
     updateSettings({
       primaryProvider: provider,
-      primaryModel: DEFAULT_MODELS_BY_PROVIDER[provider],
+      primaryModel: nextModel,
     });
   };
 
   const switchVerifierProvider = (provider: ProviderKind) => {
+    const fetched = availableModelsByProvider[provider];
+    const defaultModel =
+      provider === "copilot"
+        ? "gpt-6.1-terra"
+        : DEFAULT_MODELS_BY_PROVIDER[provider];
+    const nextModel =
+      fetched && fetched.length > 0
+        ? fetched.includes(defaultModel)
+          ? defaultModel
+          : fetched[0]
+        : defaultModel;
     updateSettings({
       verifierProvider: provider,
-      verifierModel:
-        provider === "copilot"
-          ? "gpt-6.1-terra"
-          : DEFAULT_MODELS_BY_PROVIDER[provider],
+      verifierModel: nextModel,
     });
   };
 
@@ -172,9 +289,33 @@ export function ProviderConnectionCard({
             </select>
           </div>
 
-          {aiSettings.primaryProvider === "copilot" ? (
-            <div className="field">
+          <div className="field">
+            <div className="model-field-header">
               <label htmlFor="primary-model-select">Primary AI model</label>
+              {onRefreshModels && (
+                <button
+                  type="button"
+                  className="text-button model-refresh-btn"
+                  disabled={!desktop || Boolean(busy) || primaryModelsLoading}
+                  onClick={() =>
+                    onRefreshModels(
+                      activeProvider,
+                      activeProvider === "ollama"
+                        ? ollamaUrlDraft.trim() || aiSettings.ollamaBaseUrl
+                        : undefined,
+                    )
+                  }
+                >
+                  {primaryModelsLoading ? (
+                    <LoaderCircle className="spin" size={12} />
+                  ) : (
+                    <RefreshCw size={12} />
+                  )}
+                  {primaryModelsLoading ? "Loading…" : "Refresh models"}
+                </button>
+              )}
+            </div>
+            {primaryModelOptions.length > 0 ? (
               <select
                 id="primary-model-select"
                 value={aiSettings.primaryModel}
@@ -183,43 +324,65 @@ export function ProviderConnectionCard({
                   updateSettings({ primaryModel: e.target.value })
                 }
               >
-                {COPILOT_MODELS.map((m) => (
+                {primaryModelOptions.map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
                 ))}
               </select>
-            </div>
-          ) : (
-            <Field
-              label="Primary AI model"
-              value={aiSettings.primaryModel}
-              onChange={(primaryModel) =>
-                updateSettings({
-                  primaryModel: primaryModel.trim() || aiSettings.primaryModel,
-                })
-              }
-              maxLength={100}
-              placeholder={
-                DEFAULT_MODELS_BY_PROVIDER[aiSettings.primaryProvider]
-              }
-            />
-          )}
+            ) : (
+              <input
+                id="primary-model-select"
+                type="text"
+                value={primaryModelDraft}
+                disabled={!desktop || Boolean(busy)}
+                maxLength={100}
+                placeholder={
+                  DEFAULT_MODELS_BY_PROVIDER[aiSettings.primaryProvider]
+                }
+                onChange={(e) => setPrimaryModelDraft(e.target.value)}
+                onBlur={commitPrimaryModelDraft}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitPrimaryModelDraft();
+                  }
+                }}
+              />
+            )}
+            {primaryModelsError && (
+              <p className="fine-print" role="status">
+                Could not refresh models: {primaryModelsError}
+              </p>
+            )}
+          </div>
 
           {aiSettings.primaryProvider === "ollama" && (
-            <Field
-              label="Compatible endpoint URL"
-              value={aiSettings.ollamaBaseUrl}
-              onChange={(ollamaBaseUrl) =>
-                updateSettings({
-                  ollamaBaseUrl:
-                    ollamaBaseUrl.trim() || "http://127.0.0.1:11434/v1",
-                })
-              }
-              maxLength={300}
-              placeholder="http://127.0.0.1:11434/v1"
-              hint="HTTP is allowed for localhost/127.0.0.1; remote endpoints require HTTPS."
-            />
+            <div className="field">
+              <label htmlFor="ollama-base-url-input">
+                Compatible endpoint URL
+              </label>
+              <input
+                id="ollama-base-url-input"
+                type="text"
+                value={ollamaUrlDraft}
+                disabled={!desktop || Boolean(busy)}
+                maxLength={300}
+                placeholder="http://127.0.0.1:11434/v1"
+                onChange={(e) => setOllamaUrlDraft(e.target.value)}
+                onBlur={commitOllamaUrlDraft}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitOllamaUrlDraft();
+                  }
+                }}
+              />
+              <span className="field-hint">
+                HTTP is allowed for localhost/127.0.0.1; remote endpoints
+                require HTTPS.
+              </span>
+            </div>
           )}
 
           {aiSettings.primaryProvider !== "copilot" && (
@@ -316,11 +479,38 @@ export function ProviderConnectionCard({
                     )}
                   </select>
                 </div>
-                {aiSettings.verifierProvider === "copilot" ? (
-                  <div className="field">
+                <div className="field">
+                  <div className="model-field-header">
                     <label htmlFor="verifier-model-select">
                       Verifier model
                     </label>
+                    {onRefreshModels && (
+                      <button
+                        type="button"
+                        className="text-button model-refresh-btn"
+                        aria-label="Refresh verifier models"
+                        disabled={
+                          !desktop || Boolean(busy) || verifierModelsLoading
+                        }
+                        onClick={() =>
+                          onRefreshModels(
+                            aiSettings.verifierProvider,
+                            aiSettings.verifierProvider === "ollama"
+                              ? ollamaUrlDraft.trim() ||
+                                  aiSettings.ollamaBaseUrl
+                              : undefined,
+                          )
+                        }
+                      >
+                        {verifierModelsLoading ? (
+                          <LoaderCircle className="spin" size={12} />
+                        ) : (
+                          <RefreshCw size={12} />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {verifierModelOptions.length > 0 ? (
                     <select
                       id="verifier-model-select"
                       value={aiSettings.verifierModel}
@@ -329,26 +519,38 @@ export function ProviderConnectionCard({
                         updateSettings({ verifierModel: e.target.value })
                       }
                     >
-                      {COPILOT_MODELS.map((m) => (
+                      {verifierModelOptions.map((m) => (
                         <option key={m} value={m}>
                           {m}
                         </option>
                       ))}
                     </select>
-                  </div>
-                ) : (
-                  <Field
-                    label="Verifier model"
-                    value={aiSettings.verifierModel}
-                    onChange={(verifierModel) =>
-                      updateSettings({
-                        verifierModel:
-                          verifierModel.trim() || aiSettings.verifierModel,
-                      })
-                    }
-                    maxLength={100}
-                  />
-                )}
+                  ) : (
+                    <input
+                      id="verifier-model-select"
+                      type="text"
+                      value={verifierModelDraft}
+                      disabled={!desktop || Boolean(busy)}
+                      maxLength={100}
+                      placeholder={
+                        DEFAULT_MODELS_BY_PROVIDER[aiSettings.verifierProvider]
+                      }
+                      onChange={(e) => setVerifierModelDraft(e.target.value)}
+                      onBlur={commitVerifierModelDraft}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          commitVerifierModelDraft();
+                        }
+                      }}
+                    />
+                  )}
+                  {verifierModelsError && (
+                    <p className="fine-print" role="status">
+                      Could not refresh verifier models: {verifierModelsError}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

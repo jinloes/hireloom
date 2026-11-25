@@ -44,58 +44,58 @@ responsibilities change.
 
 ## Frontend components and styles
 
-| Location                                              | Responsibility                                                                                                 |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `src/components/studio/StudioShellChrome.tsx`         | Collapsible studio navigation rail, dismissible AI promo, non-studio topbar, notices, and loading/fatal states |
-| `src/components/studio/StudioDocumentToolbar.tsx`     | Document title, autosave/privacy badges, theme toggle, undo/redo, PDF/DOCX export, and overflow menu           |
-| `src/components/studio/StudioEditPane.tsx`            | Studio tablist (`Content`, `Tailor & Coach`, `Design`), active AI cancel strip, and license footer             |
-| `src/components/studio/StudioPreviewPane.tsx`         | Preview mode switcher (`Live sheet`, `PDF proof`, `Compare`), zoom controls, and Quality Checks bar            |
-| `src/components/studio/VariantCompareView.tsx`        | Word-level diff sheet comparing the active resume against the Master Career Library or another variant         |
-| `src/components/studio/ResumeLibraryView.tsx`         | "My resumes" document management grid (create, open, duplicate, delete, import, backup)                        |
-| `src/components/studio/StudioDialogs.tsx`             | Accessible modal dialogs for confirmed resume deletion, PDF/DOCX import review, and font license display       |
-| `src/components/CareerLibraryView.tsx`                | Master Career Library view and interactive tailored-resume variant builder                                     |
-| `src/components/studio/CareerLibrarySectionCards.tsx` | Career Library canonical item cards for Experience, Projects, Education, Certifications, and Skill Groups      |
-| `src/components/Editor.tsx`                           | Top-level resume content editor (personal details, summary, section focus jumps, section composition)          |
-| `src/components/editor/FieldPrimitives.tsx`           | Shared accessible `Field`, `MonthYearPicker`, `BulletListEditor`, and `MoveButtons` controls                   |
-| `src/components/editor/ExperienceSection.tsx`         | Collapsible Experience cards with inline APR coaching and Career Library sync                                  |
-| `src/components/editor/ProjectsSection.tsx`           | Collapsible Projects cards with inline APR coaching and Career Library sync                                    |
-| `src/components/editor/CredentialsSections.tsx`       | Collapsible Education and Certifications editor sections                                                       |
-| `src/components/editor/SkillsAndCustomSections.tsx`   | Categorized Skill Groups, interactive flat skill chips, and user-defined Custom Sections                       |
-| `src/components/CopilotPanel.tsx`                     | AI studio panel orchestrating provider settings, rewrite consent, keyword triage, proposals, and APR           |
-| `src/components/copilot/ProposalPrimitives.tsx`       | Shared `WordDiffText` and `GroundingBadge` review primitives                                                   |
-| `src/components/copilot/ProviderConnectionCard.tsx`   | Collapsible AI provider/model/verifier settings, OS credential key controls, and Copilot CLI sign-in           |
-| `src/components/copilot/KeywordTriageCard.tsx`        | Interactive job-description keyword chips (`Add skill`, `Skip`, `Restore`)                                     |
-| `src/components/copilot/RewriteProposalsSection.tsx`  | Whole-resume and single-role selective proposal cards with per-item `Include` / `Keep original` toggles        |
-| `src/components/copilot/AprCoachingSection.tsx`       | APR accomplishment target picker, rubric feedback, Q&A inputs, and initial/refined rewrite comparison          |
-| `src/components/ResumePreview.tsx`                    | Live on-screen resume preview honoring section order, page size, density, and measured page-break markers      |
-| `src/components/StylePanel.tsx`                       | Template, accent, page-size (`A4` / `US Letter`), spacing density, and section-order controls                  |
-| `src/App.css`                                         | CSS entry sheet importing the five focused stylesheets under `src/styles/`                                     |
-| `src/styles/base-and-editor.css`                      | Core tokens, studio shell baseline, buttons, form controls, and editor card styles                             |
-| `src/styles/preview-and-copilot.css`                  | Resume paper preview, templates, Tailor & Coach panel, APR cards, and style-picker styles                      |
-| `src/styles/library-and-v2.css`                       | Resume library, quality checks, word diffs, skill groups, Career Library, and import dialog styles             |
-| `src/styles/theme-and-ai.css`                         | 100dvh studio viewport, WCAG 2.2 AA light/dark theme tokens, split-pane resizer, and AI provider UI            |
-| `src/styles/studio-modes.css`                         | Tailor & Coach sub-views, active AI cancel banner, PDF page proof stage, and variant diff comparison styles    |
+| Location                                              | Responsibility                                                                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `src/components/studio/StudioShellChrome.tsx`         | Collapsible studio navigation rail, dismissible AI promo, non-studio topbar, notices, and loading/fatal states                    |
+| `src/components/studio/StudioDocumentToolbar.tsx`     | Document title, autosave/privacy badges, theme toggle, undo/redo, PDF/DOCX export, and overflow menu                              |
+| `src/components/studio/StudioEditPane.tsx`            | Studio tablist (`Content`, `Tailor & Coach`, `Design`), active AI cancel strip, and license footer                                |
+| `src/components/studio/StudioPreviewPane.tsx`         | Preview mode switcher (`Live sheet`, `PDF proof`, `Compare`), zoom controls, and Quality Checks bar                               |
+| `src/components/studio/VariantCompareView.tsx`        | Word-level diff sheet comparing the active resume against the Master Career Library or another variant                            |
+| `src/components/studio/ResumeLibraryView.tsx`         | "My resumes" document management grid (create, open, duplicate, delete, import, backup)                                           |
+| `src/components/studio/StudioDialogs.tsx`             | Accessible modal dialogs for confirmed resume deletion, PDF/DOCX import review, and font license display                          |
+| `src/components/CareerLibraryView.tsx`                | Master Career Library view and interactive tailored-resume variant builder                                                        |
+| `src/components/studio/CareerLibrarySectionCards.tsx` | Career Library canonical item cards for Experience, Projects, Education, Certifications, and Skill Groups                         |
+| `src/components/Editor.tsx`                           | Top-level resume content editor (personal details, summary, section focus jumps, section composition)                             |
+| `src/components/editor/FieldPrimitives.tsx`           | Shared accessible `Field`, `MonthYearPicker`, `BulletListEditor`, and `MoveButtons` controls                                      |
+| `src/components/editor/ExperienceSection.tsx`         | Collapsible Experience cards with inline APR coaching and Career Library sync                                                     |
+| `src/components/editor/ProjectsSection.tsx`           | Collapsible Projects cards with inline APR coaching and Career Library sync                                                       |
+| `src/components/editor/CredentialsSections.tsx`       | Collapsible Education and Certifications editor sections                                                                          |
+| `src/components/editor/SkillsAndCustomSections.tsx`   | Categorized Skill Groups, interactive flat skill chips, and user-defined Custom Sections                                          |
+| `src/components/CopilotPanel.tsx`                     | AI studio panel orchestrating provider settings, rewrite consent, keyword triage, proposals, and APR                              |
+| `src/components/copilot/ProposalPrimitives.tsx`       | Shared `WordDiffText` and `GroundingBadge` review primitives                                                                      |
+| `src/components/copilot/ProviderConnectionCard.tsx`   | Collapsible AI provider/model/verifier settings, live provider model refresh, OS credential key controls, and Copilot CLI sign-in |
+| `src/components/copilot/KeywordTriageCard.tsx`        | Interactive job-description keyword chips (`Add skill`, `Skip`, `Restore`)                                                        |
+| `src/components/copilot/RewriteProposalsSection.tsx`  | Whole-resume and single-role selective proposal cards with per-item `Include` / `Keep original` toggles                           |
+| `src/components/copilot/AprCoachingSection.tsx`       | APR accomplishment target picker, rubric feedback, Q&A inputs, and initial/refined rewrite comparison                             |
+| `src/components/ResumePreview.tsx`                    | Live on-screen resume preview honoring section order, page size, density, and measured page-break markers                         |
+| `src/components/StylePanel.tsx`                       | Template, accent, page-size (`A4` / `US Letter`), spacing density, and section-order controls                                     |
+| `src/App.css`                                         | CSS entry sheet importing the five focused stylesheets under `src/styles/`                                                        |
+| `src/styles/base-and-editor.css`                      | Core tokens, studio shell baseline, buttons, form controls, and editor card styles                                                |
+| `src/styles/preview-and-copilot.css`                  | Resume paper preview, templates, Tailor & Coach panel, APR cards, and style-picker styles                                         |
+| `src/styles/library-and-v2.css`                       | Resume library, quality checks, word diffs, skill groups, Career Library, and import dialog styles                                |
+| `src/styles/theme-and-ai.css`                         | 100dvh studio viewport, WCAG 2.2 AA light/dark theme tokens, split-pane resizer, and AI provider UI                               |
+| `src/styles/studio-modes.css`                         | Tailor & Coach sub-views, active AI cancel banner, PDF page proof stage, and variant diff comparison styles                       |
 
 ## Native backend
 
 `src-tauri/src/` is organized into focused domain modules wired by `lib.rs`:
 
-| Location                           | Responsibility                                                                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `src-tauri/src/lib.rs`             | Tauri builder, `CopilotOperationLock`, `AiCancelFlag` (`cancel_ai_request`), IPC commands, and close/exit routing               |
-| `src-tauri/src/contract.rs`        | Serde workspace/resume/Career Library/AI/APR/import DTOs, `AI_CANCELLED_MESSAGE`, v1→v2 upgrade types, and size/count constants |
-| `src-tauri/src/validation.rs`      | Strict workspace, resume, Career Library, AI proposal, APR target/question/answer, and export byte validators                   |
-| `src-tauri/src/storage.rs`         | App-data `workspace.json` & `ai-settings.json` paths, v1→v2 load parsing, atomic temp-file writes, and owner-only permissions   |
-| `src-tauri/src/copilot.rs`         | Isolated Copilot CLI paths, JSONC config enforcement, allowlisted env/args, cancellable process runner, and JSON event parser   |
-| `src-tauri/src/providers.rs`       | `ProviderKind`, `AiSettings`, OS keyring `CredentialStore`, API-key resolution, and model/endpoint URL validation               |
-| `src-tauri/src/provider_http.rs`   | Shared cancellable HTTP completion client for OpenAI, Anthropic, Google Gemini, and OpenAI-compatible/Ollama endpoints          |
-| `src-tauri/src/prompts.rs`         | Redacted, delimited untrusted prompt builders for whole-resume, single-role, APR, grounding verifier, and import mapping        |
-| `src-tauri/src/responses.rs`       | Strict JSON parsers/normalizers for whole-resume, single-role, grounding verification, and resume import responses              |
-| `src-tauri/src/apr_responses.rs`   | Strict JSON parsers, unchanged-rewrite normalizers, and target/answer echo binders for APR analysis and refinement              |
-| `src-tauri/src/workflows.rs`       | Provider dispatch (`dispatch_ai_prompt`) and end-to-end native AI + optional grounding-verifier orchestration                   |
-| `src-tauri/src/tests_workspace.rs` | Native unit tests for v2 validation, v1 migration, Career Library invariants, atomic saves, and PDF/DOCX export headers         |
-| `src-tauri/src/tests_ai.rs`        | Native unit tests for Copilot CLI isolation, prompt PII/URL redaction, APR/refinement binding, timeouts, and error handling     |
-| `src-tauri/src/tests_providers.rs` | Native unit tests for multi-provider HTTP adapters, keyring storage, endpoint validation, grounding verifier, and import assist |
+| Location                           | Responsibility                                                                                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src-tauri/src/lib.rs`             | Tauri builder, `CopilotOperationLock`, `AiCancelFlag` (`cancel_ai_request`), IPC commands, and close/exit routing                                  |
+| `src-tauri/src/contract.rs`        | Serde workspace/resume/Career Library/AI/APR/import DTOs, `AI_CANCELLED_MESSAGE`, v1→v2 upgrade types, and size/count constants                    |
+| `src-tauri/src/validation.rs`      | Strict workspace, resume, Career Library, AI proposal, APR target/question/answer, and export byte validators                                      |
+| `src-tauri/src/storage.rs`         | App-data `workspace.json` & `ai-settings.json` paths, v1→v2 load parsing, atomic temp-file writes, and owner-only permissions                      |
+| `src-tauri/src/copilot.rs`         | Isolated Copilot CLI paths, JSONC config enforcement, allowlisted env/args, ACP model discovery, cancellable process runner, and JSON event parser |
+| `src-tauri/src/providers.rs`       | `ProviderKind`, `AiSettings`, OS keyring `CredentialStore`, API-key resolution, and model/endpoint URL validation                                  |
+| `src-tauri/src/provider_http.rs`   | Shared cancellable HTTP completion and `/models` discovery client for OpenAI, Anthropic, Google Gemini, and Ollama endpoints                       |
+| `src-tauri/src/prompts.rs`         | Redacted, delimited untrusted prompt builders for whole-resume, single-role, APR, grounding verifier, and import mapping                           |
+| `src-tauri/src/responses.rs`       | Strict JSON parsers/normalizers for whole-resume, single-role, grounding verification, and resume import responses                                 |
+| `src-tauri/src/apr_responses.rs`   | Strict JSON parsers, unchanged-rewrite normalizers, and target/answer echo binders for APR analysis and refinement                                 |
+| `src-tauri/src/workflows.rs`       | Provider dispatch (`dispatch_ai_prompt`) and end-to-end native AI + optional grounding-verifier orchestration                                      |
+| `src-tauri/src/tests_workspace.rs` | Native unit tests for v2 validation, v1 migration, Career Library invariants, atomic saves, and PDF/DOCX export headers                            |
+| `src-tauri/src/tests_ai.rs`        | Native unit tests for Copilot CLI isolation, prompt PII/URL redaction, APR/refinement binding, timeouts, and error handling                        |
+| `src-tauri/src/tests_providers.rs` | Native unit tests for multi-provider HTTP adapters, keyring storage, endpoint validation, grounding verifier, and import assist                    |
 
 Related native configuration:
 

@@ -479,6 +479,96 @@ describe("local feedback", () => {
     expect(diff.some((s) => s.kind === "added")).toBe(true);
   });
 
+  it("upgrades legacy targetJob v2 workspaces without dropping content", () => {
+    const legacy = {
+      version: 2,
+      activeResumeId: "resume-1",
+      resumes: [
+        {
+          id: "resume-1",
+          title: "Legacy Resume",
+          updatedAt: "2026-09-15T00:00:00Z",
+          basics: {
+            name: "Alex",
+            headline: "Engineer",
+            email: "alex@example.com",
+            phone: "",
+            location: "",
+            website: "",
+            github: "",
+          },
+          summary: "Summary text.",
+          experience: [],
+          education: [],
+          skills: ["TypeScript"],
+          targetJob: {
+            title: "Staff Engineer",
+            company: "Acme",
+            sourceUrl: "https://example.com/job",
+            description: "Build reliable local software.",
+          },
+          projects: [
+            {
+              id: "proj-1",
+              name: "Hireloom",
+              role: "Author",
+              url: "https://example.com/hireloom",
+              startDate: "2025-01",
+              endDate: "Present",
+              bullets: ["Built offline studio."],
+            },
+          ],
+          certifications: [
+            {
+              id: "cert-1",
+              name: "AWS SA",
+              issuer: "AWS",
+              date: "2024",
+              credentialUrl: "https://example.com/cert",
+            },
+          ],
+          awards: [
+            {
+              id: "award-1",
+              title: "Top Builder",
+              issuer: "Acme",
+              date: "2025",
+              description: "Recognized for reliability.",
+            },
+          ],
+          volunteer: [],
+          publications: [],
+          languages: [],
+          additionalSectionOrder: [
+            "projects",
+            "certifications",
+            "awards",
+            "volunteer",
+            "publications",
+            "languages",
+          ],
+          template: "editorial",
+          accent: "teal",
+        },
+      ],
+    };
+
+    const upgraded = parseWorkspace(JSON.stringify(legacy));
+    expect(upgraded.resumes[0].jobDescription).toBe(
+      "Build reliable local software.",
+    );
+    expect(upgraded.resumes[0].projects[0].subtitle).toBe("Author");
+    expect(upgraded.resumes[0].certifications[0].url).toBe(
+      "https://example.com/cert",
+    );
+    expect(upgraded.resumes[0].customSections).toHaveLength(1);
+    expect(upgraded.resumes[0].customSections[0].title).toBe("Awards");
+
+    const corrupt = structuredClone(legacy);
+    (corrupt.resumes[0] as Record<string, unknown>).unknownKey = true;
+    expect(() => parseWorkspace(JSON.stringify(corrupt))).toThrow();
+  });
+
   it("runs deterministic resume quality checks without manufacturing fake scores", () => {
     const weak = createResume();
     weak.basics.name = "Casey";

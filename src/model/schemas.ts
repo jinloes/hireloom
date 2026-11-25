@@ -410,6 +410,217 @@ export function exampleResume(): Resume {
   };
 }
 
+const legacyTargetJobSchema = z.strictObject({
+  title: shortTextField.default(""),
+  company: shortTextField.default(""),
+  sourceUrl: shortTextField.default(""),
+  description: z.string().max(20_000).default(""),
+});
+
+const legacyProjectSchema = z.strictObject({
+  id: idField,
+  name: shortTextField,
+  role: shortTextField.default(""),
+  url: shortTextField.default(""),
+  startDate: shortTextField.default(""),
+  endDate: shortTextField.default(""),
+  bullets: z.array(bulletField).max(30).default([]),
+});
+
+const legacyCertificationSchema = z.strictObject({
+  id: idField,
+  name: shortTextField,
+  issuer: shortTextField.default(""),
+  date: shortTextField.default(""),
+  credentialUrl: shortTextField.default(""),
+});
+
+const legacyAwardSchema = z.strictObject({
+  id: idField,
+  title: shortTextField,
+  issuer: shortTextField.default(""),
+  date: shortTextField.default(""),
+  description: bulletField.default(""),
+});
+
+const legacyVolunteerSchema = z.strictObject({
+  id: idField,
+  organization: shortTextField.default(""),
+  role: shortTextField.default(""),
+  startDate: shortTextField.default(""),
+  endDate: shortTextField.default(""),
+  bullets: z.array(bulletField).max(30).default([]),
+});
+
+const legacyPublicationSchema = z.strictObject({
+  id: idField,
+  title: shortTextField,
+  publisher: shortTextField.default(""),
+  date: shortTextField.default(""),
+  url: shortTextField.default(""),
+});
+
+const legacyLanguageSchema = z.strictObject({
+  id: idField,
+  name: shortTextField,
+  proficiency: shortTextField.default(""),
+});
+
+const legacyAdditionalSectionSchema = z.enum([
+  "projects",
+  "certifications",
+  "awards",
+  "volunteer",
+  "publications",
+  "languages",
+]);
+
+const legacyResumeV2Schema = z.strictObject({
+  id: idField,
+  title: z.string().max(120),
+  updatedAt: shortTextField,
+  basics: z.strictObject({
+    name: shortTextField,
+    headline: shortTextField,
+    email: shortTextField,
+    phone: shortTextField,
+    location: shortTextField,
+    website: shortTextField,
+    github: shortTextField.default(""),
+  }),
+  summary: z.string().max(10_000),
+  experience: z.array(experienceSchema).max(30),
+  education: z.array(educationSchema).max(20),
+  skills: z.array(shortTextField).max(100),
+  targetJob: legacyTargetJobSchema.default({
+    title: "",
+    company: "",
+    sourceUrl: "",
+    description: "",
+  }),
+  projects: z.array(legacyProjectSchema).max(20).default([]),
+  certifications: z.array(legacyCertificationSchema).max(20).default([]),
+  awards: z.array(legacyAwardSchema).max(20).default([]),
+  volunteer: z.array(legacyVolunteerSchema).max(20).default([]),
+  publications: z.array(legacyPublicationSchema).max(20).default([]),
+  languages: z.array(legacyLanguageSchema).max(20).default([]),
+  additionalSectionOrder: z.array(legacyAdditionalSectionSchema).default([]),
+  jobDescription: z.string().max(20_000).optional(),
+  template: z.enum(["editorial", "modern"]),
+  accent: z.enum(["teal", "indigo", "charcoal"]),
+});
+
+const legacyWorkspaceV2Schema = z
+  .strictObject({
+    version: z.literal(WORKSPACE_VERSION),
+    activeResumeId: idField,
+    resumes: z.array(legacyResumeV2Schema).min(1).max(50),
+  })
+  .superRefine(checkWorkspaceSelection);
+
+function formatLegacyRange(start: string, end: string): string {
+  const s = start.trim();
+  const e = end.trim();
+  if (s && e) return `${s} – ${e}`;
+  return s || e;
+}
+
+function upgradeLegacyResumeV2(
+  legacy: z.infer<typeof legacyResumeV2Schema>,
+): Resume {
+  const customSections: CustomSection[] = [];
+  if (legacy.awards.length > 0) {
+    customSections.push({
+      id: "legacy-awards",
+      title: "Awards",
+      entries: legacy.awards.map((award) => ({
+        id: award.id,
+        heading: award.title,
+        subheading: award.issuer,
+        date: award.date,
+        bullets: award.description.trim() ? [award.description] : [],
+      })),
+    });
+  }
+  if (legacy.volunteer.length > 0) {
+    customSections.push({
+      id: "legacy-volunteer",
+      title: "Volunteer",
+      entries: legacy.volunteer.map((item) => ({
+        id: item.id,
+        heading: item.role,
+        subheading: item.organization,
+        date: formatLegacyRange(item.startDate, item.endDate),
+        bullets: item.bullets,
+      })),
+    });
+  }
+  if (legacy.publications.length > 0) {
+    customSections.push({
+      id: "legacy-publications",
+      title: "Publications",
+      entries: legacy.publications.map((item) => ({
+        id: item.id,
+        heading: item.title,
+        subheading: item.publisher,
+        date: item.date,
+        bullets: item.url.trim() ? [item.url] : [],
+      })),
+    });
+  }
+  if (legacy.languages.length > 0) {
+    customSections.push({
+      id: "legacy-languages",
+      title: "Languages",
+      entries: legacy.languages.map((item) => ({
+        id: item.id,
+        heading: item.name,
+        subheading: item.proficiency,
+        date: "",
+        bullets: [],
+      })),
+    });
+  }
+
+  return {
+    id: legacy.id,
+    title: legacy.title,
+    updatedAt: legacy.updatedAt,
+    basics: legacy.basics,
+    summary: legacy.summary,
+    experience: legacy.experience,
+    projects: legacy.projects.map((project) => ({
+      id: project.id,
+      name: project.name,
+      subtitle: project.role,
+      url: project.url,
+      startDate: project.startDate,
+      endDate: project.endDate,
+      bullets: project.bullets,
+    })),
+    education: legacy.education,
+    certifications: legacy.certifications.map((cert) => ({
+      id: cert.id,
+      name: cert.name,
+      issuer: cert.issuer,
+      date: cert.date,
+      url: cert.credentialUrl,
+    })),
+    customSections,
+    skills: legacy.skills,
+    skillGroups: [],
+    sectionOrder: [...DEFAULT_SECTION_ORDER],
+    skippedKeywords: [],
+    jobDescription: legacy.targetJob.description.trim()
+      ? legacy.targetJob.description
+      : (legacy.jobDescription ?? ""),
+    template: legacy.template,
+    accent: legacy.accent,
+    pageSize: "a4",
+    density: "standard",
+  };
+}
+
 export function upgradeWorkspace(parsed: unknown): Workspace {
   if (
     typeof parsed === "object" &&
@@ -432,12 +643,23 @@ export function upgradeWorkspace(parsed: unknown): Workspace {
   }
 
   const result = workspaceSchema.safeParse(parsed);
-  if (!result.success) {
-    throw new Error(
-      `This is not a supported Hireloom workspace: ${result.error.issues[0]?.message ?? "invalid data"}`,
-    );
+  if (result.success) {
+    return result.data;
   }
-  return result.data;
+
+  const legacyV2 = legacyWorkspaceV2Schema.safeParse(parsed);
+  if (legacyV2.success) {
+    return workspaceSchema.parse({
+      version: WORKSPACE_VERSION,
+      activeResumeId: legacyV2.data.activeResumeId,
+      resumes: legacyV2.data.resumes.map(upgradeLegacyResumeV2),
+      careerLibrary: emptyCareerLibrary(),
+    });
+  }
+
+  throw new Error(
+    `This is not a supported Hireloom workspace: ${result.error.issues[0]?.message ?? "invalid data"}`,
+  );
 }
 
 export function parseWorkspace(text: string): Workspace {

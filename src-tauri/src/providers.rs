@@ -1,9 +1,11 @@
 #[cfg(test)]
 pub use crate::provider_http::run_http_provider_prompt;
-pub use crate::provider_http::{run_http_provider_prompt_cancellable, HttpEndpoints};
+pub use crate::provider_http::{
+    list_http_provider_models, run_http_provider_prompt_cancellable, HttpEndpoints,
+};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::{env, path::Path};
+use std::{env, path::Path, time::Duration};
 
 pub const AI_SETTINGS_FILE: &str = "ai-settings.json";
 pub const KEYRING_SERVICE: &str = "app.hireloom.desktop";
@@ -245,10 +247,14 @@ pub fn validate_model_id(provider: ProviderKind, model: &str) -> Result<(), Stri
     }
     match provider {
         ProviderKind::Copilot => {
-            if !COPILOT_ALLOWED_MODELS.contains(&trimmed) {
+            if trimmed.starts_with('-')
+                || !trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '/'))
+                || trimmed.contains("..")
+            {
                 return Err(format!(
-                    "Unsupported Copilot CLI model \"{trimmed}\". Choose one of: {}",
-                    COPILOT_ALLOWED_MODELS.join(", ")
+                    "Unsupported Copilot CLI model identifier \"{trimmed}\""
                 ));
             }
         }
@@ -325,4 +331,26 @@ pub fn load_ai_settings_from_path(path: &Path) -> Result<AiSettings, String> {
         .map_err(|error| format!("AI settings file is malformed: {error}"))?;
     validate_ai_settings(&settings)?;
     Ok(settings)
+}
+
+pub fn list_models_for_provider(
+    provider: ProviderKind,
+    ollama_base_url: &str,
+    store: &dyn CredentialStore,
+    endpoints: &HttpEndpoints,
+) -> Result<Vec<String>, String> {
+    if provider == ProviderKind::Copilot {
+        return Ok(COPILOT_ALLOWED_MODELS
+            .iter()
+            .map(|m| (*m).to_string())
+            .collect());
+    }
+    let api_key = resolve_api_key(store, provider)?;
+    list_http_provider_models(
+        provider,
+        api_key.as_deref(),
+        ollama_base_url,
+        endpoints,
+        Duration::from_secs(10),
+    )
 }

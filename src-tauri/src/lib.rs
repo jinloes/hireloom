@@ -14,14 +14,14 @@ pub use contract::*;
 use apr_responses::*;
 use copilot::*;
 use prompts::*;
-use providers::{
-    provider_credential_statuses, validate_ai_settings, AiSettings, CredentialStore,
-    OsKeyringStore, ProviderKind,
-};
 #[cfg(test)]
 use providers::{
-    run_http_provider_prompt, run_http_provider_prompt_cancellable, validate_model_id,
-    HttpEndpoints,
+    list_http_provider_models, run_http_provider_prompt, run_http_provider_prompt_cancellable,
+    validate_model_id,
+};
+use providers::{
+    list_models_for_provider, provider_credential_statuses, validate_ai_settings, AiSettings,
+    CredentialStore, HttpEndpoints, OsKeyringStore, ProviderKind,
 };
 use responses::*;
 use std::sync::{Arc, Mutex};
@@ -210,6 +210,31 @@ async fn clear_provider_api_key(provider: ProviderKind) -> CommandResult<()> {
 }
 
 #[tauri::command]
+async fn list_provider_models(
+    app: AppHandle,
+    provider: ProviderKind,
+    ollama_base_url: Option<String>,
+) -> CommandResult<Vec<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if provider == ProviderKind::Copilot {
+            return discover_copilot_models(&app);
+        }
+        let base_url = match ollama_base_url {
+            Some(url) if !url.trim().is_empty() => url.trim().to_string(),
+            _ => load_ai_settings_for_app(&app)?.ollama_base_url,
+        };
+        list_models_for_provider(
+            provider,
+            &base_url,
+            &OsKeyringStore,
+            &HttpEndpoints::default(),
+        )
+    })
+    .await
+    .map_err(|error| format!("Model discovery worker failed: {error}"))?
+}
+
+#[tauri::command]
 async fn copilot_status(app: AppHandle) -> CopilotStatus {
     let result = tauri::async_runtime::spawn_blocking(move || probe_copilot(&app)).await;
     match result {
@@ -378,6 +403,7 @@ pub fn run() {
             save_ai_settings,
             set_provider_api_key,
             clear_provider_api_key,
+            list_provider_models,
             cancel_ai_request,
             copilot_status,
             copilot_login,

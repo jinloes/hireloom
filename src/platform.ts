@@ -1,6 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { z } from "zod";
 import {
   aiSettingsSchema,
+  COPILOT_MODELS,
+  DEFAULT_MODELS_BY_PROVIDER,
   defaultAiSettings,
   importedStructureProposalSchema,
   MAX_WORKSPACE_BYTES,
@@ -186,6 +189,22 @@ export async function clearProviderApiKey(
     throw new Error("Open the desktop app to manage provider API keys.");
   }
   await invoke("clear_provider_api_key", { provider });
+}
+
+export async function listProviderModels(
+  provider: ProviderKind,
+  ollamaBaseUrl?: string,
+): Promise<string[]> {
+  if (!desktop) {
+    return provider === "copilot"
+      ? [...COPILOT_MODELS]
+      : [DEFAULT_MODELS_BY_PROVIDER[provider]];
+  }
+  const raw = await invoke<unknown>("list_provider_models", {
+    provider,
+    ollamaBaseUrl: ollamaBaseUrl?.trim() ? ollamaBaseUrl.trim() : null,
+  });
+  return z.array(z.string().min(1).max(100)).parse(raw);
 }
 
 export async function copilotStatus(): Promise<CopilotStatus> {

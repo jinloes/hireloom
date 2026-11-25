@@ -153,8 +153,13 @@ export function ResumePreview({
             {renderSectionHeader("Experience", "experience")}
             {resume.experience.map((entry) => (
               <div
-                className="resume-entry"
+                className={`resume-entry ${onSelectSection ? "interactive-preview-entry" : ""}`}
                 key={entry.id}
+                title={
+                  onSelectSection
+                    ? "Click to edit this role in the left pane"
+                    : undefined
+                }
                 onClick={(e) => handleSurfaceClick(e, "experience", entry.id)}
               >
                 <div className="resume-entry-heading">
@@ -192,8 +197,13 @@ export function ResumePreview({
             {renderSectionHeader("Projects", "projects")}
             {resume.projects.map((project) => (
               <div
-                className="resume-entry"
+                className={`resume-entry ${onSelectSection ? "interactive-preview-entry" : ""}`}
                 key={project.id}
+                title={
+                  onSelectSection
+                    ? "Click to edit this project in the left pane"
+                    : undefined
+                }
                 onClick={(e) => handleSurfaceClick(e, "projects", project.id)}
               >
                 <div className="resume-entry-heading">

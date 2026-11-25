@@ -282,3 +282,85 @@ fn proposal_requires_exact_original_experience_ids() {
         b"```json\n{\"summary\":\"ok\",\"experience\":[{\"id\":\"experience-1\",\"bullets\":[]}],\"notes\":[]}\n```";
     assert!(parse_ai_proposal(fenced, ["experience-1"]).is_ok());
 }
+
+#[test]
+fn upgrades_legacy_target_job_v2_workspaces_losslessly() {
+    let legacy = json!({
+        "version": 2,
+        "activeResumeId": "resume-1",
+        "resumes": [{
+            "id": "resume-1",
+            "title": "Legacy Resume",
+            "updatedAt": "2026-09-15T00:00:00Z",
+            "basics": {
+                "name": "Alex",
+                "headline": "Engineer",
+                "email": "alex@example.com",
+                "phone": "",
+                "location": "",
+                "website": "",
+                "github": ""
+            },
+            "summary": "Summary text.",
+            "experience": [],
+            "education": [],
+            "skills": ["Rust"],
+            "targetJob": {
+                "title": "Staff Engineer",
+                "company": "Acme",
+                "sourceUrl": "https://example.com/job",
+                "description": "Build reliable local software."
+            },
+            "projects": [{
+                "id": "proj-1",
+                "name": "Hireloom",
+                "role": "Author",
+                "url": "https://example.com/hireloom",
+                "startDate": "2025-01",
+                "endDate": "Present",
+                "bullets": ["Built offline studio."]
+            }],
+            "certifications": [{
+                "id": "cert-1",
+                "name": "AWS SA",
+                "issuer": "AWS",
+                "date": "2024",
+                "credentialUrl": "https://example.com/cert"
+            }],
+            "awards": [{
+                "id": "award-1",
+                "title": "Top Builder",
+                "issuer": "Acme",
+                "date": "2025",
+                "description": "Recognized for reliability."
+            }],
+            "volunteer": [],
+            "publications": [],
+            "languages": [{
+                "id": "lang-1",
+                "name": "Spanish",
+                "proficiency": "Conversational"
+            }],
+            "additionalSectionOrder": ["projects", "certifications", "awards", "volunteer", "publications", "languages"],
+            "template": "editorial",
+            "accent": "teal"
+        }]
+    });
+    let bytes = serde_json::to_vec(&legacy).expect("serialize legacy workspace");
+    let upgraded = parse_workspace_bytes(&bytes).expect("upgrade legacy v2 workspace");
+    let resume = &upgraded.resumes[0];
+    assert_eq!(resume.job_description, "Build reliable local software.");
+    assert_eq!(resume.projects.len(), 1);
+    assert_eq!(resume.projects[0].subtitle, "Author");
+    assert_eq!(resume.certifications.len(), 1);
+    assert_eq!(resume.certifications[0].url, "https://example.com/cert");
+    assert_eq!(resume.custom_sections.len(), 2);
+    assert_eq!(resume.custom_sections[0].title, "Awards");
+    assert_eq!(resume.custom_sections[1].title, "Languages");
+
+    // Unknown fields outside both current and legacy v2 schemas are still rejected.
+    let mut corrupt = legacy;
+    corrupt["resumes"][0]["unexpectedField"] = json!(true);
+    let corrupt_bytes = serde_json::to_vec(&corrupt).expect("serialize corrupt workspace");
+    assert!(parse_workspace_bytes(&corrupt_bytes).is_err());
+}

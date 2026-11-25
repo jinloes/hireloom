@@ -132,6 +132,7 @@ browser behavior. Its desktop methods invoke:
 | `save_ai_settings`         | React to Rust | Validated provider/model/verifier settings (`ai-settings.json`) |
 | `set_provider_api_key`     | React to Rust | API key stored in OS credential manager (`keyring`)             |
 | `clear_provider_api_key`   | React to Rust | API key removed from OS credential manager                      |
+| `list_provider_models`     | React to Rust | Validated available model IDs for the configured AI provider    |
 | `copilot_login`            | React to Rust | App-specific Copilot web login completion                       |
 | `cancel_ai_request`        | React to Rust | Immediate cancellation of in-flight CLI or HTTP AI work         |
 | `generate_resume`          | React to Rust | Validated whole-resume proposal (+ optional grounding)          |

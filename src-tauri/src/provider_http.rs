@@ -352,3 +352,153 @@ fn execute_http_provider_prompt(
         }
     }
 }
+
+const MAX_MODEL_LIST_BYTES: usize = 1024 * 1024;
+
+pub fn list_http_provider_models(
+    provider: ProviderKind,
+    api_key: Option<&str>,
+    ollama_base_url: &str,
+    endpoints: &HttpEndpoints,
+    timeout: Duration,
+) -> Result<Vec<String>, String> {
+    let client = shared_http_client()?;
+
+    let (status, body) = match provider {
+        ProviderKind::Copilot => {
+            return Err("Copilot models are managed via the Copilot CLI allowlist".to_string());
+        }
+        ProviderKind::Openai | ProviderKind::Ollama => {
+            let base = if provider == ProviderKind::Openai {
+                endpoints.openai_base.trim_end_matches('/').to_string()
+            } else {
+                validate_compatible_base_url(ollama_base_url)?;
+                ollama_base_url.trim_end_matches('/').to_string()
+            };
+            let url = format!("{base}/models");
+            let mut request = client.get(&url).timeout(timeout);
+            if provider == ProviderKind::Openai {
+                let key = api_key.ok_or_else(|| {
+                    "Configure your OpenAI API key in AI settings or set OPENAI_API_KEY."
+                        .to_string()
+                })?;
+                request = request.bearer_auth(key);
+            } else if let Some(key) = api_key {
+                if !key.trim().is_empty() {
+                    request = request.bearer_auth(key);
+                }
+            }
+            let response = request.send().map_err(|error| {
+                format!(
+                    "Unable to reach {} endpoint: {}",
+                    provider.as_id(),
+                    error.without_url()
+                )
+            })?;
+            read_response_capped(response, MAX_MODEL_LIST_BYTES)?
+        }
+        ProviderKind::Anthropic => {
+            let key = api_key.ok_or_else(|| {
+                "Configure your Anthropic API key in AI settings or set ANTHROPIC_API_KEY."
+                    .to_string()
+            })?;
+            let url = format!("{}/models", endpoints.anthropic_base.trim_end_matches('/'));
+            let response = client
+                .get(&url)
+                .timeout(timeout)
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01")
+                .send()
+                .map_err(|error| {
+                    format!(
+                        "Unable to reach Anthropic endpoint: {}",
+                        error.without_url()
+                    )
+                })?;
+            read_response_capped(response, MAX_MODEL_LIST_BYTES)?
+        }
+        ProviderKind::Gemini => {
+            let key = api_key.ok_or_else(|| {
+                "Configure your Google Gemini API key in AI settings or set GEMINI_API_KEY."
+                    .to_string()
+            })?;
+            let url = format!("{}/models", endpoints.gemini_base.trim_end_matches('/'));
+            let response = client
+                .get(&url)
+                .timeout(timeout)
+                .header("x-goog-api-key", key)
+                .send()
+                .map_err(|error| {
+                    format!("Unable to reach Gemini endpoint: {}", error.without_url())
+                })?;
+            read_response_capped(response, MAX_MODEL_LIST_BYTES)?
+        }
+    };
+
+    if !status.is_success() {
+        return Err(summarize_http_error(provider, status, &body));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_slice(&body)
+        .map_err(|error| format!("Invalid JSON model list from {}: {error}", provider.as_id()))?;
+    Ok(extract_provider_model_ids(provider, &parsed))
+}
+
+fn extract_provider_model_ids(provider: ProviderKind, parsed: &serde_json::Value) -> Vec<String> {
+    let mut ids = Vec::new();
+    match provider {
+        ProviderKind::Gemini => {
+            if let Some(models) = parsed.get("models").and_then(serde_json::Value::as_array) {
+                for entry in models {
+                    let supports_generate = entry
+                        .get("supportedGenerationMethods")
+                        .and_then(serde_json::Value::as_array)
+                        .is_none_or(|methods| {
+                            methods
+                                .iter()
+                                .any(|m| m.as_str() == Some("generateContent"))
+                        });
+                    if !supports_generate {
+                        continue;
+                    }
+                    if let Some(raw_name) = entry.get("name").and_then(serde_json::Value::as_str) {
+                        let candidate = raw_name.strip_prefix("models/").unwrap_or(raw_name).trim();
+                        if validate_model_id(provider, candidate).is_ok() {
+                            ids.push(candidate.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        ProviderKind::Openai | ProviderKind::Anthropic | ProviderKind::Ollama => {
+            if let Some(data) = parsed.get("data").and_then(serde_json::Value::as_array) {
+                for entry in data {
+                    if let Some(id) = entry.get("id").and_then(serde_json::Value::as_str) {
+                        let candidate = id.trim();
+                        if validate_model_id(provider, candidate).is_ok() {
+                            ids.push(candidate.to_string());
+                        }
+                    }
+                }
+            } else if let Some(models) = parsed.get("models").and_then(serde_json::Value::as_array)
+            {
+                for entry in models {
+                    if let Some(name) = entry
+                        .get("name")
+                        .or_else(|| entry.get("model"))
+                        .and_then(serde_json::Value::as_str)
+                    {
+                        let candidate = name.trim();
+                        if validate_model_id(provider, candidate).is_ok() {
+                            ids.push(candidate.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        ProviderKind::Copilot => {}
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}

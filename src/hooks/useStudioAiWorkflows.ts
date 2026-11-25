@@ -3,6 +3,7 @@ import {
   applyAprRewrite,
   applyPartialProposal,
   applyRoleTailorProposal,
+  COPILOT_MODELS,
   defaultAiSettings,
   defaultProposalSelection,
   normalizeAprAnswers,
@@ -27,9 +28,11 @@ import {
   cancelAiRequest,
   clearProviderApiKey,
   copilotStatus,
+  desktop,
   generateResume,
   generateSummaryOptions,
   isAiCancelledError,
+  listProviderModels,
   loginToCopilot,
   refineAccomplishment,
   saveAiSettings,
@@ -104,6 +107,15 @@ export function useStudioAiWorkflows({
   const [providerStates, setProviderStates] = useState<
     ProviderCredentialStatus[]
   >([]);
+  const [availableModelsByProvider, setAvailableModelsByProvider] = useState<
+    Partial<Record<ProviderKind, string[]>>
+  >(() => ({ copilot: [...COPILOT_MODELS] }));
+  const [modelsLoading, setModelsLoading] = useState<
+    Partial<Record<ProviderKind, boolean>>
+  >({});
+  const [modelsError, setModelsError] = useState<
+    Partial<Record<ProviderKind, string>>
+  >({});
   const [copilot, setCopilot] = useState<CopilotStatus | null>(null);
   const [busy, setBusy] = useState<AiBusyKind>(null);
   const [consent, setConsent] = useState(false);
@@ -146,6 +158,61 @@ export function useStudioAiWorkflows({
     }
   }
 
+  const refreshProviderModels = useCallback(
+    async (provider: ProviderKind, ollamaBaseUrl?: string) => {
+      if (!desktop) return;
+      setModelsLoading((current) => ({ ...current, [provider]: true }));
+      setModelsError((current) => {
+        if (!(provider in current)) return current;
+        const next = { ...current };
+        delete next[provider];
+        return next;
+      });
+      try {
+        const models = await listProviderModels(provider, ollamaBaseUrl);
+        setAvailableModelsByProvider((current) => ({
+          ...current,
+          [provider]: models,
+        }));
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === "string"
+              ? error
+              : "Unable to load available models.";
+        setModelsError((current) => ({ ...current, [provider]: message }));
+      } finally {
+        setModelsLoading((current) => ({ ...current, [provider]: false }));
+      }
+    },
+    [],
+  );
+
+  function syncModelsForSettings(
+    settings: AiSettings,
+    providers: ProviderCredentialStatus[],
+  ) {
+    if (!desktop) return;
+    const targets = new Set<ProviderKind>([settings.primaryProvider]);
+    if (settings.verifierEnabled) {
+      targets.add(settings.verifierProvider);
+    }
+    for (const provider of targets) {
+      const info = providers.find((item) => item.provider === provider);
+      const shouldFetch =
+        provider === "copilot" ||
+        provider === "ollama" ||
+        Boolean(info?.configured);
+      if (shouldFetch) {
+        void refreshProviderModels(
+          provider,
+          provider === "ollama" ? settings.ollamaBaseUrl : undefined,
+        );
+      }
+    }
+  }
+
   async function refreshCopilot() {
     setBusy("status");
     try {
@@ -160,6 +227,7 @@ export function useStudioAiWorkflows({
           ? providerInfo.copilot
           : status,
       );
+      syncModelsForSettings(providerInfo.settings, providerInfo.providers);
     } catch (error) {
       report(error);
     } finally {
@@ -182,6 +250,7 @@ export function useStudioAiWorkflows({
       if (providerInfo.copilot.version || providerInfo.copilot.available) {
         setCopilot(providerInfo.copilot);
       }
+      syncModelsForSettings(saved, providerInfo.providers);
       setNotice({
         kind: "success",
         text: `AI settings updated (${PROVIDER_LABELS[saved.primaryProvider]} · ${saved.primaryModel}).`,
@@ -200,6 +269,10 @@ export function useStudioAiWorkflows({
       const providerInfo = await aiProviderStatus();
       setAiSettings(providerInfo.settings);
       setProviderStates(providerInfo.providers);
+      void refreshProviderModels(
+        provider,
+        provider === "ollama" ? providerInfo.settings.ollamaBaseUrl : undefined,
+      );
       setNotice({
         kind: "success",
         text: `${PROVIDER_LABELS[provider]} key stored in your OS credential store.`,
@@ -218,6 +291,28 @@ export function useStudioAiWorkflows({
       const providerInfo = await aiProviderStatus();
       setAiSettings(providerInfo.settings);
       setProviderStates(providerInfo.providers);
+      const info = providerInfo.providers.find(
+        (item) => item.provider === provider,
+      );
+      if (info?.configured || provider === "ollama") {
+        void refreshProviderModels(
+          provider,
+          provider === "ollama"
+            ? providerInfo.settings.ollamaBaseUrl
+            : undefined,
+        );
+      } else {
+        setAvailableModelsByProvider((current) => {
+          const next = { ...current };
+          delete next[provider];
+          return next;
+        });
+        setModelsError((current) => {
+          const next = { ...current };
+          delete next[provider];
+          return next;
+        });
+      }
       setNotice({
         kind: "success",
         text: `Removed saved ${PROVIDER_LABELS[provider]} key from your OS credential store.`,
@@ -635,6 +730,10 @@ export function useStudioAiWorkflows({
   return {
     aiSettings,
     providerStates,
+    availableModelsByProvider,
+    modelsLoading,
+    modelsError,
+    refreshProviderModels,
     copilot,
     busy,
     setBusy,

@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   defaultAiSettings,
   emptyCareerLibrary,
@@ -28,6 +34,7 @@ vi.mock("./platform", async (importOriginal) => {
     saveAiSettings: vi.fn(),
     setProviderApiKey: vi.fn(),
     clearProviderApiKey: vi.fn(),
+    listProviderModels: vi.fn(),
     copilotStatus: vi.fn().mockResolvedValue({
       available: true,
       version: "test-cli",
@@ -58,6 +65,13 @@ beforeEach(() => {
   };
   vi.mocked(platform.loadWorkspace).mockResolvedValue(workspace);
   vi.mocked(platform.saveWorkspace).mockResolvedValue(undefined);
+  vi.mocked(platform.listProviderModels).mockResolvedValue([
+    "claude-sonnet-5.5",
+    "gpt-6.1-terra",
+    "gpt-6.2-sol",
+    "gpt-6-luna",
+    "claude-haiku-5.5",
+  ]);
   const copilot = {
     available: true,
     version: "test-cli",
@@ -1072,5 +1086,114 @@ describe("resume studio", () => {
     expect(compareSheet).toHaveTextContent("2 tailored sections differ");
     expect(compareSheet).toHaveTextContent("Rust");
     expect(compareSheet).toHaveTextContent("distributed");
+  });
+
+  it("refreshes available provider models on provider switch and manual refresh, and surfaces APR selection above the bullet list", async () => {
+    vi.mocked(platform.saveAiSettings).mockImplementation(async (s) => s);
+    vi.mocked(platform.listProviderModels).mockImplementation(
+      async (provider) => {
+        if (provider === "ollama") {
+          return ["llama3.3:latest", "qwen2.5:14b"];
+        }
+        return ["claude-sonnet-5.5", "gpt-6.1-terra"];
+      },
+    );
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Tailor & Coach" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Checking the local Copilot CLI…"),
+      ).not.toBeInTheDocument(),
+    );
+
+    // Switch to Ollama and verify available models populate the dropdown
+    fireEvent.click(screen.getByRole("button", { name: /Provider Setup/ }));
+    fireEvent.change(screen.getByLabelText("Primary AI provider"), {
+      target: { value: "ollama" },
+    });
+    await waitFor(() =>
+      expect(platform.listProviderModels).toHaveBeenCalledWith(
+        "ollama",
+        "http://127.0.0.1:11434/v1",
+      ),
+    );
+    const modelSelect = await screen.findByLabelText("Primary AI model");
+    expect(modelSelect.tagName).toBe("SELECT");
+    expect(modelSelect).toHaveTextContent("qwen2.5:14b");
+
+    // Manual refresh picks up newly added models
+    vi.mocked(platform.listProviderModels).mockResolvedValueOnce([
+      "llama3.3:latest",
+      "mistral-small:24b",
+      "qwen2.5:14b",
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: /Refresh models/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Primary AI model")).toHaveTextContent(
+        "mistral-small:24b",
+      ),
+    );
+
+    // Selecting "Analyze with APR" surfaces the confirmation card above the list with a Selected badge
+    fireEvent.click(screen.getByRole("button", { name: /APR Bullet Coach/ }));
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Analyze with APR" })[0],
+    );
+    const requestHeading = screen.getByRole("heading", {
+      name: "Selected accomplishment",
+    });
+    const firstBulletBtn = screen.getAllByRole("button", {
+      name: "Analyze with APR",
+    })[0];
+    expect(firstBulletBtn).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Selected")).toBeVisible();
+    expect(
+      requestHeading.compareDocumentPosition(firstBulletBtn) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("filters sections via sticky section pills, collapses 2nd+ experience entries by default, and supports expand/collapse all", async () => {
+    const resume = exampleResume();
+    resume.experience.push({
+      id: "experience-2",
+      role: "Staff Engineer",
+      company: "Acme Corp",
+      location: "Remote",
+      startDate: "2020-01",
+      endDate: "2022-01",
+      bullets: ["Scaled distributed ingestion pipeline by 4x."],
+    });
+    vi.mocked(platform.loadWorkspace).mockResolvedValue({
+      ...workspace,
+      activeResumeId: resume.id,
+      resumes: [resume],
+    });
+
+    render(<App />);
+    expect(await screen.findByLabelText("Job title 1")).toBeVisible();
+    // 2nd position starts collapsed to reduce scrolling
+    expect(screen.queryByLabelText("Job title 2")).not.toBeInTheDocument();
+
+    // Clicking "Expand all" opens position 2
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all" }));
+    expect(screen.queryByLabelText("Job title 1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand all" }));
+    expect(screen.getByLabelText("Job title 1")).toBeVisible();
+    expect(screen.getByLabelText("Job title 2")).toBeVisible();
+
+    // Clicking a section pill focuses just that section
+    const sectionNav = screen.getByRole("navigation", {
+      name: "Resume sections",
+    });
+    fireEvent.click(
+      within(sectionNav).getByRole("button", { name: /^Experience/ }),
+    );
+    expect(screen.queryByLabelText("Full name")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Job title 1")).toBeVisible();
+
+    fireEvent.click(within(sectionNav).getByRole("button", { name: "All" }));
+    expect(screen.getByLabelText("Full name")).toBeVisible();
   });
 });

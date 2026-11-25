@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   CheckCheck,
   LoaderCircle,
@@ -74,6 +75,20 @@ export function AprCoachingSection({
   aprRefinementStale: boolean;
   onApplyAprRefinement: () => void;
 }) {
+  const requestCardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!aprTarget) return;
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    requestCardRef.current?.scrollIntoView?.({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
+  }, [aprTarget]);
+
   return (
     <section
       ref={sectionRef}
@@ -113,108 +128,19 @@ export function AprCoachingSection({
           </button>
         </div>
       )}
-      <div className="accomplishment-groups">
-        {resume.experience.map((experience) => {
-          const accomplishments = experience.bullets
-            .map((text, bulletIndex) => ({ text, bulletIndex }))
-            .filter(({ text }) => text.trim());
-          if (!accomplishments.length) return null;
-          return (
-            <div className="accomplishment-group" key={experience.id}>
-              <h3>{experience.role.trim() || "Untitled role"}</h3>
-              <ul>
-                {accomplishments.map(({ text, bulletIndex }) => {
-                  const selected =
-                    aprTarget?.resumeId === resume.id &&
-                    aprTarget.experienceId === experience.id &&
-                    aprTarget.bulletIndex === bulletIndex;
-                  return (
-                    <li key={bulletIndex}>
-                      <p>{text}</p>
-                      <button
-                        type="button"
-                        className="button secondary small"
-                        aria-pressed={selected}
-                        onClick={() =>
-                          onSelectApr({
-                            resumeId: resume.id,
-                            experienceId: experience.id,
-                            bulletIndex,
-                            role: experience.role,
-                            bullet: text,
-                            ...(aprFocusKeyword
-                              ? { focusKeyword: aprFocusKeyword }
-                              : {}),
-                          })
-                        }
-                      >
-                        Analyze with APR
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
-        {resume.projects.map((project) => {
-          const accomplishments = project.bullets
-            .map((text, bulletIndex) => ({ text, bulletIndex }))
-            .filter(({ text }) => text.trim());
-          if (!accomplishments.length) return null;
-          const roleLabel = projectRoleLabel(project);
-          return (
-            <div className="accomplishment-group" key={project.id}>
-              <h3>{project.name.trim() || "Untitled project"}</h3>
-              <ul>
-                {accomplishments.map(({ text, bulletIndex }) => {
-                  const selected =
-                    aprTarget?.resumeId === resume.id &&
-                    aprTarget.experienceId === project.id &&
-                    aprTarget.bulletIndex === bulletIndex;
-                  return (
-                    <li key={bulletIndex}>
-                      <p>{text}</p>
-                      <button
-                        type="button"
-                        className="button secondary small"
-                        aria-pressed={selected}
-                        onClick={() =>
-                          onSelectApr({
-                            resumeId: resume.id,
-                            experienceId: project.id,
-                            bulletIndex,
-                            role: roleLabel,
-                            bullet: text,
-                            ...(aprFocusKeyword
-                              ? { focusKeyword: aprFocusKeyword }
-                              : {}),
-                          })
-                        }
-                      >
-                        Analyze with APR
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
-        {!resume.experience.some((experience) =>
-          experience.bullets.some((text) => text.trim()),
-        ) &&
-          !resume.projects.some((project) =>
-            project.bullets.some((text) => text.trim()),
-          ) && (
-            <p className="fine-print">
-              Add a nonempty experience or project accomplishment to analyze it.
-            </p>
-          )}
-      </div>
       {aprTarget && (
-        <div className="apr-request-card">
-          <h3>Selected accomplishment</h3>
+        <div ref={requestCardRef} className="apr-request-card">
+          <div className="card-heading">
+            <h3>Selected accomplishment</h3>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Clear selected accomplishment"
+              onClick={onDiscardApr}
+            >
+              <X size={16} />
+            </button>
+          </div>
           <blockquote>{aprTarget.bullet}</blockquote>
           {missingKeywords.length > 0 && (
             <div className="field apr-keyword-picker">
@@ -293,6 +219,12 @@ export function AprCoachingSection({
           {!desktop && (
             <p className="fine-print" role="status">
               APR analysis is available only in the desktop app.
+            </p>
+          )}
+          {desktop && !providerReady && (
+            <p className="fine-print" role="status">
+              Configure {activeProviderLabel} in Provider Setup before running
+              APR analysis.
             </p>
           )}
         </div>
@@ -405,6 +337,12 @@ export function AprCoachingSection({
                     APR refinement is available only in the desktop app.
                   </p>
                 )}
+                {desktop && !providerReady && (
+                  <p className="fine-print" role="status">
+                    Configure {activeProviderLabel} in Provider Setup before
+                    refining this rewrite.
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -460,6 +398,115 @@ export function AprCoachingSection({
           </button>
         </section>
       )}
+      <div className="accomplishment-groups">
+        {resume.experience.map((experience) => {
+          const accomplishments = experience.bullets
+            .map((text, bulletIndex) => ({ text, bulletIndex }))
+            .filter(({ text }) => text.trim());
+          if (!accomplishments.length) return null;
+          return (
+            <div className="accomplishment-group" key={experience.id}>
+              <h3>{experience.role.trim() || "Untitled role"}</h3>
+              <ul>
+                {accomplishments.map(({ text, bulletIndex }) => {
+                  const selected =
+                    aprTarget?.resumeId === resume.id &&
+                    aprTarget.experienceId === experience.id &&
+                    aprTarget.bulletIndex === bulletIndex;
+                  return (
+                    <li key={bulletIndex}>
+                      <p>{text}</p>
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="button secondary small"
+                          aria-pressed={selected}
+                          onClick={() =>
+                            onSelectApr({
+                              resumeId: resume.id,
+                              experienceId: experience.id,
+                              bulletIndex,
+                              role: experience.role,
+                              bullet: text,
+                              ...(aprFocusKeyword
+                                ? { focusKeyword: aprFocusKeyword }
+                                : {}),
+                            })
+                          }
+                        >
+                          Analyze with APR
+                        </button>
+                        {selected && (
+                          <span className="apr-selected-badge">Selected</span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+        {resume.projects.map((project) => {
+          const accomplishments = project.bullets
+            .map((text, bulletIndex) => ({ text, bulletIndex }))
+            .filter(({ text }) => text.trim());
+          if (!accomplishments.length) return null;
+          const roleLabel = projectRoleLabel(project);
+          return (
+            <div className="accomplishment-group" key={project.id}>
+              <h3>{project.name.trim() || "Untitled project"}</h3>
+              <ul>
+                {accomplishments.map(({ text, bulletIndex }) => {
+                  const selected =
+                    aprTarget?.resumeId === resume.id &&
+                    aprTarget.experienceId === project.id &&
+                    aprTarget.bulletIndex === bulletIndex;
+                  return (
+                    <li key={bulletIndex}>
+                      <p>{text}</p>
+                      <div className="button-row">
+                        <button
+                          type="button"
+                          className="button secondary small"
+                          aria-pressed={selected}
+                          onClick={() =>
+                            onSelectApr({
+                              resumeId: resume.id,
+                              experienceId: project.id,
+                              bulletIndex,
+                              role: roleLabel,
+                              bullet: text,
+                              ...(aprFocusKeyword
+                                ? { focusKeyword: aprFocusKeyword }
+                                : {}),
+                            })
+                          }
+                        >
+                          Analyze with APR
+                        </button>
+                        {selected && (
+                          <span className="apr-selected-badge">Selected</span>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
+        {!resume.experience.some((experience) =>
+          experience.bullets.some((text) => text.trim()),
+        ) &&
+          !resume.projects.some((project) =>
+            project.bullets.some((text) => text.trim()),
+          ) && (
+            <p className="fine-print">
+              Add a nonempty experience or project accomplishment to analyze it.
+            </p>
+          )}
+      </div>
     </section>
   );
 }

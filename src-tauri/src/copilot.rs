@@ -5,10 +5,12 @@ use crate::{
 };
 use serde_json::json;
 use std::{
+    collections::HashSet,
     fs,
-    io::{self, Read, Write},
+    io::{self, BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
@@ -394,6 +396,8 @@ impl ReasoningEffort {
     }
 }
 
+const MAX_COPILOT_EVENT_STREAM_BYTES: usize = 2 * 1024 * 1024;
+
 pub(crate) fn run_copilot_prompt(
     app: &AppHandle,
     model: &str,
@@ -418,7 +422,7 @@ pub(crate) fn run_copilot_prompt(
         command,
         Some(prompt.as_bytes()),
         COPILOT_TIMEOUT,
-        MAX_GENERATION_OUTPUT_BYTES,
+        MAX_COPILOT_EVENT_STREAM_BYTES,
         Some(cancel),
     )
     .map_err(|error| format!("GitHub Copilot request failed to start: {error}"))?;
@@ -429,7 +433,7 @@ pub(crate) fn run_copilot_prompt(
         return Err("GitHub Copilot request timed out after 180 seconds".to_string());
     }
     if output.output_truncated {
-        return Err("Copilot response exceeds the 128 KB limit".to_string());
+        return Err("Copilot event stream exceeds the 2 MB limit".to_string());
     }
     if !output.status.success() {
         return Err(format!(
@@ -437,13 +441,18 @@ pub(crate) fn run_copilot_prompt(
             summarize_process_error(&output)
         ));
     }
-    extract_copilot_final_response(&output.stdout)
+    let response = extract_copilot_final_response(&output.stdout)?;
+    if response.len() > MAX_GENERATION_OUTPUT_BYTES {
+        return Err("Copilot response exceeds the 128 KB limit".to_string());
+    }
+    Ok(response)
 }
 
 pub(crate) fn extract_copilot_final_response(output: &[u8]) -> CommandResult<Vec<u8>> {
     let text = std::str::from_utf8(output)
         .map_err(|error| format!("Copilot event stream is not valid UTF-8: {error}"))?;
-    let mut final_response = None;
+    let mut final_phase_response = None;
+    let mut unphased_response = None;
     for (index, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
@@ -454,27 +463,42 @@ pub(crate) fn extract_copilot_final_response(output: &[u8]) -> CommandResult<Vec
                 index + 1
             )
         })?;
-        if event.get("type").and_then(serde_json::Value::as_str) != Some("assistant.message")
-            || event
-                .pointer("/data/phase")
-                .and_then(serde_json::Value::as_str)
-                != Some("final_answer")
-        {
+        if event.get("type").and_then(serde_json::Value::as_str) != Some("assistant.message") {
             continue;
         }
-        let content = event
-            .pointer("/data/content")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| {
-                "Copilot final response event does not contain text content".to_string()
-            })?;
-        final_response = Some(content.as_bytes().to_vec());
+        let phase = event
+            .pointer("/data/phase")
+            .and_then(serde_json::Value::as_str);
+        match phase {
+            Some("final_answer") => {
+                let content = event
+                    .pointer("/data/content")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| {
+                        "Copilot final response event does not contain text content".to_string()
+                    })?;
+                final_phase_response = Some(content.as_bytes().to_vec());
+            }
+            None => {
+                let Some(content_value) = event.pointer("/data/content") else {
+                    continue;
+                };
+                let content = content_value.as_str().ok_or_else(|| {
+                    "Copilot assistant message event does not contain text content".to_string()
+                })?;
+                if !content.trim().is_empty() {
+                    unphased_response = Some(content.as_bytes().to_vec());
+                }
+            }
+            Some(_) => continue,
+        }
     }
-    final_response
+    final_phase_response
+        .or(unphased_response)
         .ok_or_else(|| "Copilot event stream did not contain a final response".to_string())
 }
 
-pub(crate) fn copilot_generation_args(model: &str, effort: ReasoningEffort) -> [&str; 19] {
+pub(crate) fn copilot_generation_args(model: &str, effort: ReasoningEffort) -> [&str; 18] {
     [
         "--silent",
         "--stream",
@@ -491,11 +515,201 @@ pub(crate) fn copilot_generation_args(model: &str, effort: ReasoningEffort) -> [
         "--no-ask-user",
         "--no-auto-update",
         "--no-remote-export",
-        "--no-remote",
         "--log-level",
         "none",
         "--no-color",
     ]
+}
+
+const COPILOT_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const COPILOT_ACP_MAX_OUTPUT_BYTES: usize = 512 * 1024;
+
+pub(crate) fn copilot_acp_discovery_args() -> [&'static str; 9] {
+    [
+        "--acp",
+        "--available-tools",
+        "--disable-builtin-mcps",
+        "--no-custom-instructions",
+        "--no-ask-user",
+        "--no-auto-update",
+        "--log-level",
+        "none",
+        "--no-color",
+    ]
+}
+
+pub(crate) fn discover_copilot_models(app: &AppHandle) -> CommandResult<Vec<String>> {
+    let executable = find_copilot().ok_or_else(|| {
+        "GitHub Copilot CLI was not found on PATH or known macOS locations".to_string()
+    })?;
+    let paths = copilot_paths(app)?;
+    discover_copilot_models_with_executable(&executable, &paths, COPILOT_MODEL_DISCOVERY_TIMEOUT)
+}
+
+pub(crate) fn discover_copilot_models_with_executable(
+    executable: &Path,
+    paths: &CopilotPaths,
+    timeout: Duration,
+) -> CommandResult<Vec<String>> {
+    let mut command = Command::new(executable);
+    command.args(copilot_acp_discovery_args());
+    configure_copilot_command(&mut command, paths)?;
+    command.stdin(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("GitHub Copilot model discovery failed to start: {error}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "Unable to open stdin for Copilot model discovery".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Unable to open stdout for Copilot model discovery".to_string())?;
+    let stderr_reader = child
+        .stderr
+        .take()
+        .map(|stderr| thread::spawn(move || read_capped(stderr, 16 * 1024)));
+
+    let init_request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": 1,
+            "clientCapabilities": {}
+        }
+    });
+    let session_request = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/new",
+        "params": {
+            "cwd": paths.work.to_string_lossy(),
+            "mcpServers": []
+        }
+    });
+    let payload = format!("{init_request}\n{session_request}\n");
+    if let Err(error) = stdin
+        .write_all(payload.as_bytes())
+        .and_then(|_| stdin.flush())
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!(
+            "Unable to query GitHub Copilot CLI models: {error}"
+        ));
+    }
+
+    let (tx, rx) = mpsc::channel::<CommandResult<Vec<String>>>();
+    let stdout_reader = thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        let mut total_bytes = 0usize;
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => break,
+                Ok(n) => {
+                    total_bytes += n;
+                    if total_bytes > COPILOT_ACP_MAX_OUTPUT_BYTES {
+                        let _ = tx.send(Err(
+                            "GitHub Copilot model discovery output exceeded 512 KB".to_string(),
+                        ));
+                        return;
+                    }
+                    if let Some(result) = parse_copilot_acp_model_line(&line) {
+                        let _ = tx.send(result);
+                        return;
+                    }
+                }
+                Err(error) => {
+                    let _ = tx.send(Err(format!(
+                        "Unable to read Copilot model discovery output: {error}"
+                    )));
+                    return;
+                }
+            }
+        }
+        let _ = tx.send(Err(
+            "GitHub Copilot CLI exited before returning available models".to_string(),
+        ));
+    });
+
+    let outcome = match rx.recv_timeout(timeout) {
+        Ok(result) => result,
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            Err("Timed out waiting for GitHub Copilot CLI to list available models".to_string())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err("GitHub Copilot CLI exited before returning available models".to_string())
+        }
+    };
+
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = stdout_reader.join();
+    let stderr_text = stderr_reader
+        .and_then(|handle| handle.join().ok())
+        .and_then(Result::ok)
+        .and_then(|capped| first_nonempty_line(&capped.bytes));
+
+    match outcome {
+        Ok(models) if !models.is_empty() => Ok(models),
+        Ok(_) => Err("GitHub Copilot CLI returned no available models".to_string()),
+        Err(error) => {
+            if let Some(detail) = stderr_text {
+                Err(format!("{error} ({detail})"))
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+fn parse_copilot_acp_model_line(line: &str) -> Option<CommandResult<Vec<String>>> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(trimmed).ok()?;
+    let id = value.get("id").and_then(serde_json::Value::as_i64)?;
+    if let Some(error) = value.get("error") {
+        let message = error
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unknown ACP error");
+        return Some(Err(format!(
+            "GitHub Copilot CLI model discovery failed: {message}"
+        )));
+    }
+    if id != 2 {
+        return None;
+    }
+    let available = value
+        .pointer("/result/models/availableModels")
+        .and_then(serde_json::Value::as_array)?;
+    let mut seen = HashSet::new();
+    let mut models = Vec::new();
+    for entry in available {
+        let disabled = entry
+            .pointer("/_meta/copilotEnablement")
+            .and_then(serde_json::Value::as_str)
+            == Some("disabled");
+        if disabled {
+            continue;
+        }
+        if let Some(model_id) = entry.get("modelId").and_then(serde_json::Value::as_str) {
+            if validate_model_id(ProviderKind::Copilot, model_id).is_ok()
+                && seen.insert(model_id.to_string())
+            {
+                models.push(model_id.to_string());
+            }
+        }
+    }
+    Some(Ok(models))
 }
 
 pub(crate) struct ProcessOutput {

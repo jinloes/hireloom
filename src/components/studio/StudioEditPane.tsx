@@ -210,6 +210,12 @@ export function StudioEditPane({
                 status={ai.copilot}
                 aiSettings={ai.aiSettings}
                 providerStates={ai.providerStates}
+                availableModelsByProvider={ai.availableModelsByProvider}
+                modelsLoading={ai.modelsLoading}
+                modelsError={ai.modelsError}
+                onRefreshModels={(provider, ollamaBaseUrl) =>
+                  void ai.refreshProviderModels(provider, ollamaBaseUrl)
+                }
                 onSaveAiSettings={(next) => void ai.handleSaveAiSettings(next)}
                 onSaveApiKey={(provider, apiKey) =>
                   void ai.handleSaveApiKey(provider, apiKey)

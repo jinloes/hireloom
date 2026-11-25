@@ -47,6 +47,9 @@ export function Editor({
   focusRequest?: EditorFocusRequest | null;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState<
+    SectionKey | "basics" | "all"
+  >("all");
   const [openSections, setOpenSections] = useState<
     Record<SectionKey | "basics", boolean>
   >({
@@ -66,14 +69,42 @@ export function Editor({
   if (focusRequest && focusRequest !== prevFocusRequest) {
     setPrevFocusRequest(focusRequest);
     setOpenSections((prev) => ({ ...prev, [focusRequest.section]: true }));
+    if (activeSection !== "all" && activeSection !== focusRequest.section) {
+      setActiveSection(focusRequest.section);
+    }
     if (focusRequest.entryId) {
       const targetEntryId = focusRequest.entryId;
       setCollapsedIds((prev) => ({ ...prev, [targetEntryId]: false }));
     }
   }
 
-  const toggleCollapsed = (entryId: string) =>
-    setCollapsedIds((prev) => ({ ...prev, [entryId]: !prev[entryId] }));
+  const isEntryCollapsed = (entryId: string, index: number) =>
+    collapsedIds[entryId] ?? index > 0;
+
+  const toggleCollapsed = (entryId: string, index: number) =>
+    setCollapsedIds((prev) => ({
+      ...prev,
+      [entryId]: !(prev[entryId] ?? index > 0),
+    }));
+
+  const setManyCollapsed = (ids: string[], collapsed: boolean) =>
+    setCollapsedIds((prev) => {
+      const next = { ...prev };
+      for (const id of ids) next[id] = collapsed;
+      return next;
+    });
+
+  const expandEntry = (entryId: string) =>
+    setCollapsedIds((prev) => ({ ...prev, [entryId]: false }));
+
+  const selectSectionPill = (section: SectionKey | "basics" | "all") => {
+    if (section === "all" || section === activeSection) {
+      setActiveSection("all");
+      return;
+    }
+    setActiveSection(section);
+    setOpenSections((prev) => ({ ...prev, [section]: true }));
+  };
 
   const handleSectionToggle = (
     section: SectionKey | "basics",
@@ -101,7 +132,13 @@ export function Editor({
         : container.querySelector<HTMLElement>(
             `[data-editor-section="${focusRequest.section}"]`,
           );
-      target?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const reducedMotion =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target?.scrollIntoView({
+        behavior: reducedMotion ? "auto" : "smooth",
+        block: "nearest",
+      });
       const firstInput = target?.querySelector<HTMLElement>(
         "input, textarea, select, summary",
       );
@@ -127,7 +164,7 @@ export function Editor({
             key="summary"
             className="editor-section"
             data-editor-section="summary"
-            open={openSections.summary}
+            open={activeSection === "summary" || openSections.summary}
             onToggle={(e) => handleSectionToggle("summary", e)}
           >
             <summary>
@@ -159,10 +196,12 @@ export function Editor({
             key="experience"
             resume={resume}
             badgeNumber={badgeNumber}
-            open={openSections.experience}
+            open={activeSection === "experience" || openSections.experience}
             onToggleSection={(e) => handleSectionToggle("experience", e)}
-            collapsedIds={collapsedIds}
+            isEntryCollapsed={isEntryCollapsed}
             onToggleCollapsed={toggleCollapsed}
+            onSetManyCollapsed={setManyCollapsed}
+            onExpandEntry={expandEntry}
             onChange={onChange}
             onCoachBullet={onCoachBullet}
             careerLibrary={careerLibrary}
@@ -177,10 +216,12 @@ export function Editor({
             key="projects"
             resume={resume}
             badgeNumber={badgeNumber}
-            open={openSections.projects}
+            open={activeSection === "projects" || openSections.projects}
             onToggleSection={(e) => handleSectionToggle("projects", e)}
-            collapsedIds={collapsedIds}
+            isEntryCollapsed={isEntryCollapsed}
             onToggleCollapsed={toggleCollapsed}
+            onSetManyCollapsed={setManyCollapsed}
+            onExpandEntry={expandEntry}
             onChange={onChange}
             onCoachBullet={onCoachBullet}
             careerLibrary={careerLibrary}
@@ -195,10 +236,12 @@ export function Editor({
             key="education"
             resume={resume}
             badgeNumber={badgeNumber}
-            open={openSections.education}
+            open={activeSection === "education" || openSections.education}
             onToggleSection={(e) => handleSectionToggle("education", e)}
-            collapsedIds={collapsedIds}
+            isEntryCollapsed={isEntryCollapsed}
             onToggleCollapsed={toggleCollapsed}
+            onSetManyCollapsed={setManyCollapsed}
+            onExpandEntry={expandEntry}
             onChange={onChange}
           />
         );
@@ -209,10 +252,14 @@ export function Editor({
             key="certifications"
             resume={resume}
             badgeNumber={badgeNumber}
-            open={openSections.certifications}
+            open={
+              activeSection === "certifications" || openSections.certifications
+            }
             onToggleSection={(e) => handleSectionToggle("certifications", e)}
-            collapsedIds={collapsedIds}
+            isEntryCollapsed={isEntryCollapsed}
             onToggleCollapsed={toggleCollapsed}
+            onSetManyCollapsed={setManyCollapsed}
+            onExpandEntry={expandEntry}
             onChange={onChange}
           />
         );
@@ -223,7 +270,7 @@ export function Editor({
             key="skills"
             resume={resume}
             badgeNumber={badgeNumber}
-            open={openSections.skills}
+            open={activeSection === "skills" || openSections.skills}
             onToggleSection={(e) => handleSectionToggle("skills", e)}
             onChange={onChange}
           />
@@ -235,7 +282,7 @@ export function Editor({
             key="custom"
             resume={resume}
             badgeNumber={badgeNumber}
-            open={openSections.custom}
+            open={activeSection === "custom" || openSections.custom}
             onToggleSection={(e) => handleSectionToggle("custom", e)}
             onChange={onChange}
           />
@@ -243,8 +290,74 @@ export function Editor({
     }
   };
 
+  const sectionNavItems: {
+    id: SectionKey | "basics";
+    label: string;
+    count?: number;
+  }[] = [
+    { id: "basics", label: "Basics" },
+    ...resume.sectionOrder.map((key) => {
+      switch (key) {
+        case "summary":
+          return { id: key, label: "Summary" };
+        case "experience":
+          return {
+            id: key,
+            label: "Experience",
+            count: resume.experience.length,
+          };
+        case "projects":
+          return { id: key, label: "Projects", count: resume.projects.length };
+        case "education":
+          return {
+            id: key,
+            label: "Education",
+            count: resume.education.length,
+          };
+        case "certifications":
+          return {
+            id: key,
+            label: "Certs",
+            count: resume.certifications.length,
+          };
+        case "skills":
+          return { id: key, label: "Skills" };
+        case "custom":
+          return {
+            id: key,
+            label: "Custom",
+            count: resume.customSections.length,
+          };
+      }
+    }),
+  ];
+
   return (
     <div className="editor-content" ref={rootRef}>
+      <nav className="editor-section-nav" aria-label="Resume sections">
+        <button
+          type="button"
+          className={`section-nav-pill ${activeSection === "all" ? "active" : ""}`}
+          aria-pressed={activeSection === "all"}
+          onClick={() => selectSectionPill("all")}
+        >
+          All
+        </button>
+        {sectionNavItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`section-nav-pill ${activeSection === item.id ? "active" : ""}`}
+            aria-pressed={activeSection === item.id}
+            onClick={() => selectSectionPill(item.id)}
+          >
+            {item.label}
+            {typeof item.count === "number" && item.count > 0 && (
+              <span className="section-nav-count">{item.count}</span>
+            )}
+          </button>
+        ))}
+      </nav>
       {empty && (
         <div className="start-note">
           <span className="small-icon">
@@ -275,70 +388,78 @@ export function Editor({
           </div>
         </div>
       )}
-      <details
-        className="editor-section"
-        data-editor-section="basics"
-        open={openSections.basics}
-        onToggle={(e) => handleSectionToggle("basics", e)}
-      >
-        <summary>
-          <span>
-            <UserRound size={17} /> Personal details
-          </span>
-          <span className="section-number">01</span>
-        </summary>
-        <div className="section-fields">
-          <Field
-            label="Full name"
-            value={resume.basics.name}
-            onChange={(value) => basics("name", value)}
-            placeholder="e.g. Alex Morgan"
-          />
-          <Field
-            label="Professional headline"
-            value={resume.basics.headline}
-            onChange={(value) => basics("headline", value)}
-            placeholder="e.g. Product Designer"
-          />
-          <div className="field-grid">
+      {(activeSection === "all" || activeSection === "basics") && (
+        <details
+          className="editor-section"
+          data-editor-section="basics"
+          open={activeSection === "basics" || openSections.basics}
+          onToggle={(e) => handleSectionToggle("basics", e)}
+        >
+          <summary>
+            <span>
+              <UserRound size={17} /> Personal details
+            </span>
+            <span className="section-number">01</span>
+          </summary>
+          <div className="section-fields">
+            <div className="field-grid">
+              <Field
+                label="Full name"
+                value={resume.basics.name}
+                onChange={(value) => basics("name", value)}
+                placeholder="e.g. Alex Morgan"
+              />
+              <Field
+                label="Location"
+                value={resume.basics.location}
+                onChange={(value) => basics("location", value)}
+                placeholder="City, country"
+              />
+            </div>
             <Field
-              label="Email"
-              type="email"
-              value={resume.basics.email}
-              onChange={(value) => basics("email", value)}
-              placeholder="you@example.com"
+              label="Professional headline"
+              value={resume.basics.headline}
+              onChange={(value) => basics("headline", value)}
+              placeholder="e.g. Product Designer"
             />
-            <Field
-              label="Phone"
-              type="tel"
-              value={resume.basics.phone}
-              onChange={(value) => basics("phone", value)}
-              placeholder="Optional"
-            />
+            <div className="field-grid">
+              <Field
+                label="Email"
+                type="email"
+                value={resume.basics.email}
+                onChange={(value) => basics("email", value)}
+                placeholder="you@example.com"
+              />
+              <Field
+                label="Phone"
+                type="tel"
+                value={resume.basics.phone}
+                onChange={(value) => basics("phone", value)}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="field-grid">
+              <Field
+                label="Portfolio or LinkedIn"
+                value={resume.basics.website}
+                onChange={(value) => basics("website", value)}
+                placeholder="Your website or profile URL"
+              />
+              <Field
+                label="GitHub URL"
+                type="url"
+                value={resume.basics.github}
+                onChange={(value) => basics("github", value)}
+                placeholder="https://github.com/username"
+              />
+            </div>
           </div>
-          <Field
-            label="Location"
-            value={resume.basics.location}
-            onChange={(value) => basics("location", value)}
-            placeholder="City, country"
-          />
-          <Field
-            label="Portfolio or LinkedIn"
-            value={resume.basics.website}
-            onChange={(value) => basics("website", value)}
-            placeholder="Your website or profile URL"
-          />
-          <Field
-            label="GitHub URL"
-            type="url"
-            value={resume.basics.github}
-            onChange={(value) => basics("github", value)}
-            placeholder="https://github.com/username"
-          />
-        </div>
-      </details>
+        </details>
+      )}
       {resume.sectionOrder.map((key, idx) =>
-        renderOrderedSection(key, String(idx + 2).padStart(2, "0")),
+        activeSection === "all" || activeSection === key
+          ? renderOrderedSection(key, String(idx + 2).padStart(2, "0"))
+          : null,
       )}
     </div>
   );

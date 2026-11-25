@@ -39,6 +39,7 @@ fn copilot_generation_args_pin_sonnet_model_and_task_reasoning_effort() {
         .any(|w| w == ["--reasoning-effort", "medium"]));
     assert!(apr_args.contains(&"--available-tools"));
     assert!(!apr_args.contains(&"--allow-all"));
+    assert!(!apr_args.contains(&"--no-remote"));
 
     let refine_args = copilot_generation_args("gpt-6.1-terra", ReasoningEffort::Low);
     assert!(refine_args
@@ -112,6 +113,29 @@ fn copilot_json_event_transport_preserves_escaped_response_content() {
     let extracted = extract_copilot_final_response(output.as_bytes()).expect("extract response");
     assert_eq!(extracted, content.as_bytes());
     parse_apr_response(&extracted).expect("parse preserved APR response");
+
+    // Claude / non-phased models omit `data.phase` on `assistant.message`
+    let unphased_output = format!(
+        "{}\n{}\n{}\n",
+        json!({"type": "session.start", "data": {}}),
+        json!({
+            "type": "assistant.message",
+            "data": {
+                "phase": "commentary",
+                "content": "thinking...",
+            }
+        }),
+        json!({
+            "type": "assistant.message",
+            "data": {
+                "model": "claude-sonnet-5.5",
+                "content": content,
+            }
+        })
+    );
+    let extracted_unphased =
+        extract_copilot_final_response(unphased_output.as_bytes()).expect("extract unphased");
+    assert_eq!(extracted_unphased, content.as_bytes());
 }
 
 #[test]
@@ -400,4 +424,127 @@ fn cancellation_aborts_stalled_http_and_cli_requests_immediately() {
     assert!(output.cancelled);
     assert!(!output.timed_out);
     assert!(proc_started.elapsed() < Duration::from_secs(2));
+}
+
+#[test]
+fn list_http_provider_models_fetches_and_filters_provider_models() {
+    let (openai_url, openai_req) = spawn_single_response_http_server(
+        r#"{"data":[{"id":"gpt-4.1-mini"},{"id":"gpt-4.1"},{"id":"../bad"},{"id":"gpt-4.1"}]}"#,
+    );
+    let endpoints = HttpEndpoints {
+        openai_base: openai_url,
+        ..HttpEndpoints::default()
+    };
+    let openai_models = list_http_provider_models(
+        ProviderKind::Openai,
+        Some("sk-test-models"),
+        "http://127.0.0.1:11434/v1",
+        &endpoints,
+        Duration::from_secs(3),
+    )
+    .expect("list openai models");
+    assert_eq!(openai_models, vec!["gpt-4.1", "gpt-4.1-mini"]);
+    let captured_openai = openai_req.join().expect("join openai models server");
+    assert!(captured_openai
+        .to_ascii_lowercase()
+        .contains("authorization: bearer sk-test-models"));
+
+    let (anthropic_url, anthropic_req) = spawn_single_response_http_server(
+        r#"{"data":[{"id":"claude-sonnet-4-6"},{"id":"claude-haiku-4-5"}]}"#,
+    );
+    let endpoints = HttpEndpoints {
+        anthropic_base: anthropic_url,
+        ..HttpEndpoints::default()
+    };
+    let anthropic_models = list_http_provider_models(
+        ProviderKind::Anthropic,
+        Some("ant-models-key"),
+        "http://127.0.0.1:11434/v1",
+        &endpoints,
+        Duration::from_secs(3),
+    )
+    .expect("list anthropic models");
+    assert_eq!(
+        anthropic_models,
+        vec!["claude-haiku-4-5", "claude-sonnet-4-6"]
+    );
+    let captured_ant = anthropic_req.join().expect("join anthropic models server");
+    assert!(captured_ant
+        .to_ascii_lowercase()
+        .contains("x-api-key: ant-models-key"));
+
+    let (gemini_url, gemini_req) = spawn_single_response_http_server(
+        r#"{"models":[{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent"]},{"name":"models/embedding-001","supportedGenerationMethods":["embedContent"]},{"name":"models/gemini-2.5-flash","supportedGenerationMethods":["generateContent"]}]}"#,
+    );
+    let endpoints = HttpEndpoints {
+        gemini_base: gemini_url,
+        ..HttpEndpoints::default()
+    };
+    let gemini_models = list_http_provider_models(
+        ProviderKind::Gemini,
+        Some("gem-models-key"),
+        "http://127.0.0.1:11434/v1",
+        &endpoints,
+        Duration::from_secs(3),
+    )
+    .expect("list gemini models");
+    assert_eq!(gemini_models, vec!["gemini-2.5-flash", "gemini-2.5-pro"]);
+    let captured_gem = gemini_req.join().expect("join gemini models server");
+    assert!(captured_gem
+        .to_ascii_lowercase()
+        .contains("x-goog-api-key: gem-models-key"));
+
+    let (ollama_url, _ollama_req) = spawn_single_response_http_server(
+        r#"{"data":[{"id":"qwen2.5:14b"},{"id":"llama3.3:latest"}]}"#,
+    );
+    let ollama_models = list_http_provider_models(
+        ProviderKind::Ollama,
+        None,
+        &ollama_url,
+        &HttpEndpoints::default(),
+        Duration::from_secs(3),
+    )
+    .expect("list ollama models");
+    assert_eq!(ollama_models, vec!["llama3.3:latest", "qwen2.5:14b"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn discover_copilot_models_reads_acp_available_models_and_filters_disabled() {
+    assert!(validate_model_id(ProviderKind::Copilot, "claude-opus-5.5").is_ok());
+    assert!(validate_model_id(ProviderKind::Copilot, "gemini-4-neon").is_ok());
+    assert!(validate_model_id(ProviderKind::Copilot, "auto").is_ok());
+    assert!(validate_model_id(ProviderKind::Copilot, "--allow-all").is_err());
+
+    let directory = test_directory("copilot-acp-models");
+    let home = directory.join("home");
+    let work = home.join("work");
+    fs::create_dir_all(&work).expect("create work dir");
+    let script = r#"
+read -r line1
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}'
+read -r line2
+printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1"}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"models":{"availableModels":[{"modelId":"auto"},{"modelId":"claude-sonnet-5.5","_meta":{"copilotEnablement":"enabled"}},{"modelId":"claude-opus-5.5","_meta":{"copilotEnablement":"enabled"}},{"modelId":"gemini-4-neon"},{"modelId":"disabled-model","_meta":{"copilotEnablement":"disabled"}},{"modelId":"--allow-all"},{"modelId":"claude-opus-5.5"}]}}}'
+sleep 5
+"#;
+    let executable = fake_executable(&directory, "fake-copilot-acp", script);
+    let paths = CopilotPaths {
+        system_home: directory.clone(),
+        home,
+        work,
+    };
+    let models =
+        discover_copilot_models_with_executable(&executable, &paths, Duration::from_secs(5))
+            .expect("discover copilot models");
+    assert_eq!(
+        models,
+        vec![
+            "auto",
+            "claude-sonnet-5.5",
+            "claude-opus-5.5",
+            "gemini-4-neon",
+        ]
+    );
+    fs::remove_dir_all(directory).expect("cleanup");
 }

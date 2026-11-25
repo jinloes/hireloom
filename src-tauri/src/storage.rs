@@ -3,6 +3,7 @@ use crate::{
     providers::{load_ai_settings_from_path, AiSettings, AI_SETTINGS_FILE},
     validation::validate_workspace,
 };
+use serde::Deserialize;
 use std::{
     fs,
     io::{self, Write},
@@ -30,6 +31,299 @@ pub(crate) fn workspace_path(app: &AppHandle) -> CommandResult<PathBuf> {
         .map_err(|error| format!("Unable to resolve Hireloom app data directory: {error}"))
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyTargetJob {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    company: String,
+    #[serde(default)]
+    source_url: String,
+    #[serde(default)]
+    description: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyProject {
+    id: String,
+    name: String,
+    #[serde(default)]
+    role: String,
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    start_date: String,
+    #[serde(default)]
+    end_date: String,
+    #[serde(default)]
+    bullets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyCertification {
+    id: String,
+    name: String,
+    #[serde(default)]
+    issuer: String,
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    credential_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyAward {
+    id: String,
+    title: String,
+    #[serde(default)]
+    issuer: String,
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    description: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyVolunteer {
+    id: String,
+    #[serde(default)]
+    organization: String,
+    #[serde(default)]
+    role: String,
+    #[serde(default)]
+    start_date: String,
+    #[serde(default)]
+    end_date: String,
+    #[serde(default)]
+    bullets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyPublication {
+    id: String,
+    title: String,
+    #[serde(default)]
+    publisher: String,
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyLanguage {
+    id: String,
+    name: String,
+    #[serde(default)]
+    proficiency: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum LegacyAdditionalSection {
+    Projects,
+    Certifications,
+    Awards,
+    Volunteer,
+    Publications,
+    Languages,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyResumeV2 {
+    id: String,
+    title: String,
+    updated_at: String,
+    basics: Basics,
+    summary: String,
+    experience: Vec<Experience>,
+    education: Vec<Education>,
+    skills: Vec<String>,
+    #[serde(default)]
+    target_job: LegacyTargetJob,
+    #[serde(default)]
+    projects: Vec<LegacyProject>,
+    #[serde(default)]
+    certifications: Vec<LegacyCertification>,
+    #[serde(default)]
+    awards: Vec<LegacyAward>,
+    #[serde(default)]
+    volunteer: Vec<LegacyVolunteer>,
+    #[serde(default)]
+    publications: Vec<LegacyPublication>,
+    #[serde(default)]
+    languages: Vec<LegacyLanguage>,
+    #[serde(default)]
+    additional_section_order: Vec<LegacyAdditionalSection>,
+    #[serde(default)]
+    job_description: Option<String>,
+    template: Template,
+    accent: Accent,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LegacyWorkspaceV2 {
+    version: u32,
+    active_resume_id: String,
+    resumes: Vec<LegacyResumeV2>,
+}
+
+fn format_legacy_date_range(start: &str, end: &str) -> String {
+    match (start.trim(), end.trim()) {
+        ("", "") => String::new(),
+        (s, "") => s.to_string(),
+        ("", e) => e.to_string(),
+        (s, e) => format!("{s} – {e}"),
+    }
+}
+
+fn upgrade_legacy_resume_v2(legacy: LegacyResumeV2) -> Resume {
+    let _ = (
+        &legacy.target_job.title,
+        &legacy.target_job.company,
+        &legacy.target_job.source_url,
+        &legacy.additional_section_order,
+    );
+    let job_description = if !legacy.target_job.description.trim().is_empty() {
+        legacy.target_job.description
+    } else {
+        legacy.job_description.unwrap_or_default()
+    };
+
+    let mut custom_sections = Vec::new();
+    if !legacy.awards.is_empty() {
+        custom_sections.push(CustomSection {
+            id: "legacy-awards".to_string(),
+            title: "Awards".to_string(),
+            entries: legacy
+                .awards
+                .into_iter()
+                .map(|award| CustomEntry {
+                    id: award.id,
+                    heading: award.title,
+                    subheading: award.issuer,
+                    date: award.date,
+                    bullets: if award.description.trim().is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![award.description]
+                    },
+                })
+                .collect(),
+        });
+    }
+    if !legacy.volunteer.is_empty() {
+        custom_sections.push(CustomSection {
+            id: "legacy-volunteer".to_string(),
+            title: "Volunteer".to_string(),
+            entries: legacy
+                .volunteer
+                .into_iter()
+                .map(|item| CustomEntry {
+                    id: item.id,
+                    heading: item.role,
+                    subheading: item.organization,
+                    date: format_legacy_date_range(&item.start_date, &item.end_date),
+                    bullets: item.bullets,
+                })
+                .collect(),
+        });
+    }
+    if !legacy.publications.is_empty() {
+        custom_sections.push(CustomSection {
+            id: "legacy-publications".to_string(),
+            title: "Publications".to_string(),
+            entries: legacy
+                .publications
+                .into_iter()
+                .map(|item| CustomEntry {
+                    id: item.id,
+                    heading: item.title,
+                    subheading: item.publisher,
+                    date: item.date,
+                    bullets: if item.url.trim().is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![item.url]
+                    },
+                })
+                .collect(),
+        });
+    }
+    if !legacy.languages.is_empty() {
+        custom_sections.push(CustomSection {
+            id: "legacy-languages".to_string(),
+            title: "Languages".to_string(),
+            entries: legacy
+                .languages
+                .into_iter()
+                .map(|item| CustomEntry {
+                    id: item.id,
+                    heading: item.name,
+                    subheading: item.proficiency,
+                    date: String::new(),
+                    bullets: Vec::new(),
+                })
+                .collect(),
+        });
+    }
+
+    Resume {
+        id: legacy.id,
+        title: legacy.title,
+        updated_at: legacy.updated_at,
+        basics: legacy.basics,
+        summary: legacy.summary,
+        experience: legacy.experience,
+        projects: legacy
+            .projects
+            .into_iter()
+            .map(|project| Project {
+                id: project.id,
+                name: project.name,
+                subtitle: project.role,
+                url: project.url,
+                start_date: project.start_date,
+                end_date: project.end_date,
+                bullets: project.bullets,
+                library_id: None,
+            })
+            .collect(),
+        education: legacy.education,
+        certifications: legacy
+            .certifications
+            .into_iter()
+            .map(|cert| Certification {
+                id: cert.id,
+                name: cert.name,
+                issuer: cert.issuer,
+                date: cert.date,
+                url: cert.credential_url,
+                library_id: None,
+            })
+            .collect(),
+        custom_sections,
+        skills: legacy.skills,
+        skill_groups: Vec::new(),
+        section_order: default_section_order(),
+        skipped_keywords: Vec::new(),
+        job_description,
+        template: legacy.template,
+        accent: legacy.accent,
+        page_size: default_page_size(),
+        density: default_density(),
+    }
+}
+
 pub(crate) fn parse_workspace_bytes(bytes: &[u8]) -> CommandResult<Workspace> {
     if bytes.len() > MAX_WORKSPACE_BYTES {
         return Err("Workspace file exceeds the 2 MB limit".to_string());
@@ -54,8 +348,26 @@ pub(crate) fn parse_workspace_bytes(bytes: &[u8]) -> CommandResult<Workspace> {
             }
         }
         Some(version) if version == u64::from(WORKSPACE_VERSION) => {
-            serde_json::from_slice::<Workspace>(bytes)
-                .map_err(|error| format!("Workspace file is malformed or unsupported: {error}"))?
+            match serde_json::from_slice::<Workspace>(bytes) {
+                Ok(workspace) => workspace,
+                Err(primary_error) => match serde_json::from_slice::<LegacyWorkspaceV2>(bytes) {
+                    Ok(legacy) if legacy.version == WORKSPACE_VERSION => Workspace {
+                        version: WORKSPACE_VERSION,
+                        active_resume_id: legacy.active_resume_id,
+                        resumes: legacy
+                            .resumes
+                            .into_iter()
+                            .map(upgrade_legacy_resume_v2)
+                            .collect(),
+                        career_library: CareerLibrary::default(),
+                    },
+                    _ => {
+                        return Err(format!(
+                            "Workspace file is malformed or unsupported: {primary_error}"
+                        ));
+                    }
+                },
+            }
         }
         Some(version) => {
             return Err(format!(

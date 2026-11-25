@@ -45,6 +45,10 @@ export function CopilotPanel({
   status,
   aiSettings = defaultAiSettings(),
   providerStates = [],
+  availableModelsByProvider = {},
+  modelsLoading = {},
+  modelsError = {},
+  onRefreshModels,
   onSaveAiSettings,
   onSaveApiKey,
   onClearApiKey,
@@ -95,6 +99,10 @@ export function CopilotPanel({
   status: CopilotStatus | null;
   aiSettings?: AiSettings;
   providerStates?: ProviderCredentialStatus[];
+  availableModelsByProvider?: Partial<Record<ProviderKind, string[]>>;
+  modelsLoading?: Partial<Record<ProviderKind, boolean>>;
+  modelsError?: Partial<Record<ProviderKind, string>>;
+  onRefreshModels?: (provider: ProviderKind, ollamaBaseUrl?: string) => void;
   onSaveAiSettings?: (next: AiSettings) => void;
   onSaveApiKey?: (provider: ProviderKind, apiKey: string) => void;
   onClearApiKey?: (provider: ProviderKind) => void;
@@ -310,10 +318,14 @@ export function CopilotPanel({
             status={status}
             aiSettings={aiSettings}
             providerStates={providerStates}
+            availableModelsByProvider={availableModelsByProvider}
+            modelsLoading={modelsLoading}
+            modelsError={modelsError}
             providerReady={providerReady}
             busy={busy}
             defaultExpanded
             onRefresh={onRefresh}
+            onRefreshModels={onRefreshModels}
             onLogin={onLogin}
             onSaveAiSettings={onSaveAiSettings}
             onSaveApiKey={onSaveApiKey}
